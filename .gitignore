@@ -1,0 +1,11 @@
+/target/
+/dependency-reduced-pom.xml
+/.idea/
+*.iml
+/dist_portable/
+/NextGenOptimized/
+/NextGenOptimized-Portable.zip
+/nvidia/
+*.log
+.env
+.env.*
