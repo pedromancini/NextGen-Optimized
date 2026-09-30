@@ -71,7 +71,32 @@ public class RegistryService {
         }
     }
 
+    /**
+     * Reads a value of any supported type: {@link Integer} (DWORD), {@link Long}
+     * (QWORD), {@link String} (SZ / EXPAND_SZ), {@code byte[]} or {@code String[]}.
+     *
+     * @return the value, or {@code null} when it does not exist.
+     */
+    public Object getRawValue(WinReg.HKEY root, String keyPath, String valueName) {
+        try {
+            if (!Advapi32Util.registryValueExists(root, keyPath, valueName)) return null;
+            return Advapi32Util.registryGetValue(root, keyPath, valueName);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     // ── Write ───────────────────────────────────────────────────────────
+
+    public boolean setLongValue(WinReg.HKEY root, String keyPath, String valueName, long value) {
+        try {
+            ensureKeyExists(root, keyPath);
+            Advapi32Util.registrySetLongValue(root, keyPath, valueName, value);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     public boolean setBinaryValue(WinReg.HKEY root, String keyPath, String valueName, byte[] data) {
         try {

@@ -1,6 +1,7 @@
 package com.nextgen.optimizer.ui.pages;
 
 import com.nextgen.optimizer.App;
+import com.nextgen.optimizer.services.StorageService;
 import com.nextgen.optimizer.ui.components.*;
 import com.nextgen.optimizer.core.NotificationManager;
 
@@ -34,11 +35,11 @@ public class StoragePage extends VBox {
 
     private void buildUI() {
         VBox header = new VBox(4);
-        Label title = new Label("💿 SSD / Armazenamento & HDDs");
+        Label title = new Label("SSD / Armazenamento & HDDs");
         title.getStyleClass().add("page-title");
         Label sub = new Label("Diagnóstico S.M.A.R.T., otimização TRIM de SSDs, defrag, teste de velocidade e verificação de erros");
         sub.getStyleClass().add("page-subtitle");
-        header.getChildren().addAll(title, sub);
+        header.getChildren().setAll(com.nextgen.optimizer.ui.components.Ui.pageHeader("mdi2h-harddisk", "Armazenamento", sub.getText()));
 
         drivesList = new VBox(20);
 
@@ -75,21 +76,26 @@ public class StoragePage extends VBox {
         HBox top = new HBox(14);
         top.setAlignment(Pos.CENTER_LEFT);
 
-        Label icon = new Label("SSD".equalsIgnoreCase(type) ? "⚡" : "💿");
-        icon.setStyle("-fx-font-size: 32px;");
+        StorageService.DiskInfo disk = (StorageService.DiskInfo) drive.get("info");
+        boolean ssd = "SSD".equalsIgnoreCase(type);
+        StackPane icon = new StackPane(Ui.icon(ssd ? "mdi2e-expansion-card-variant" : "mdi2h-harddisk", 22));
+        icon.getStyleClass().add("page-icon-tile");
 
         VBox titleBox = new VBox(3);
         Label name = new Label("Unidade " + letter + " (" + type + ")");
         name.setStyle("-fx-font-size: 18px; -fx-font-weight: 800; -fx-text-fill: white;");
-        Label space = new Label(usedGB + " GB usados de " + totalGB + " GB (" + freeGB + " GB livres)");
+        Label space = new Label(usedGB + " GB usados de " + totalGB + " GB (" + freeGB + " GB livres)"
+                + (disk != null && !disk.model().isBlank() ? " · " + disk.model() + " · " + disk.busType() : ""));
         space.setStyle("-fx-font-size: 12px; -fx-text-fill: #94a3b8;");
         titleBox.getChildren().addAll(name, space);
 
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Label healthBadge = new Label("✓ S.M.A.R.T.: ÍNTEGRO (100%)");
-        healthBadge.setStyle("-fx-background-color: #22c55e22; -fx-text-fill: #22c55e; -fx-font-weight: bold; -fx-font-size: 11px; -fx-padding: 5 10; -fx-background-radius: 6;");
+        String health = disk == null ? "" : disk.health();
+        boolean healthy = "Healthy".equalsIgnoreCase(health);
+        Label healthBadge = Ui.badge(health.isBlank() ? "SAÚDE: NÃO INFORMADA" : healthy ? "SAÚDE: BOA" : "SAÚDE: " + health.toUpperCase(),
+                health.isBlank() ? "badge-muted" : healthy ? "risk-safe" : "risk-advanced");
 
         top.getChildren().addAll(icon, titleBox, spacer, healthBadge);
 
@@ -112,7 +118,7 @@ public class StoragePage extends VBox {
         readLbl.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #38bdf8;");
         Label writeLbl = new Label("Escrita: -- MB/s");
         writeLbl.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #818cf8;");
-        benchResultsBox.getChildren().addAll(new Label("🏎️ Benchmark de Velocidade:"), readLbl, writeLbl);
+        benchResultsBox.getChildren().addAll(new Label("Velocidade sequencial (256 MB, sem cache):"), readLbl, writeLbl);
 
         // Functions Section Header
         Label toolsHeader = new Label("FERRAMENTAS & OTIMIZAÇÃO DA UNIDADE");
@@ -131,7 +137,7 @@ public class StoragePage extends VBox {
         }
 
         // Action 1: TRIM (SSD Optimization)
-        ActionButton trimBtn = new ActionButton("⚡ Otimizar TRIM", "primary");
+        ActionButton trimBtn = new ActionButton("Otimizar (TRIM)", "primary");
         trimBtn.setMaxWidth(Double.MAX_VALUE);
         trimBtn.setOnAction(e -> {
             trimBtn.setDisable(true);
@@ -140,14 +146,15 @@ public class StoragePage extends VBox {
                 boolean ok = app.getStorageService().runTrim(letter);
                 Platform.runLater(() -> {
                     trimBtn.setDisable(false);
-                    trimBtn.setText("⚡ Otimizar TRIM");
-                    NotificationManager.show("TRIM executado na unidade " + letter + " com máxima eficácia!", NotificationManager.Type.SUCCESS);
+                    trimBtn.setText("Otimizar (TRIM)");
+                    NotificationManager.show(ok ? "TRIM executado na unidade " + letter : "O Windows não executou o TRIM em " + letter + " (requer administrador e SSD).",
+                            ok ? NotificationManager.Type.SUCCESS : NotificationManager.Type.WARNING);
                 });
             }).start();
         });
 
         // Action 2: Benchmark Read/Write Speed
-        ActionButton benchBtn = new ActionButton("🏎️ Teste de Velocidade", "default");
+        ActionButton benchBtn = new ActionButton("Teste de velocidade", "default");
         benchBtn.setMaxWidth(Double.MAX_VALUE);
         benchBtn.setOnAction(e -> {
             benchBtn.setDisable(true);
@@ -160,33 +167,43 @@ public class StoragePage extends VBox {
                 double[] speeds = app.getStorageService().runBenchmark(letter);
                 Platform.runLater(() -> {
                     benchBtn.setDisable(false);
-                    benchBtn.setText("🏎️ Teste de Velocidade");
+                    benchBtn.setText("Teste de velocidade");
+                    if (speeds == null) {
+                        readLbl.setText("Leitura: falhou");
+                        writeLbl.setText("Escrita: falhou");
+                        NotificationManager.warning("Não foi possível testar " + letter + " (unidade somente leitura ou sem espaço).");
+                        return;
+                    }
                     readLbl.setText(String.format("Leitura: %.0f MB/s", speeds[0]));
                     writeLbl.setText(String.format("Escrita: %.0f MB/s", speeds[1]));
-                    NotificationManager.show(String.format("Benchmark %s concluído! Leitura: %.0f MB/s | Escrita: %.0f MB/s", letter, speeds[0], speeds[1]), NotificationManager.Type.SUCCESS);
+                    NotificationManager.show(String.format("Teste de %s: leitura %.0f MB/s · escrita %.0f MB/s", letter, speeds[0], speeds[1]), NotificationManager.Type.SUCCESS);
                 });
             }).start();
         });
 
         // Action 3: CHKDSK Scan Integrity
-        ActionButton chkdskBtn = new ActionButton("🛠️ Verificar Erros (CHKDSK)", "default");
+        ActionButton chkdskBtn = new ActionButton("Verificar erros (CHKDSK)", "default");
         chkdskBtn.setMaxWidth(Double.MAX_VALUE);
         chkdskBtn.setOnAction(e -> {
             chkdskBtn.setDisable(true);
             chkdskBtn.setText("Verificando...");
             new Thread(() -> {
-                app.getStorageService().runChkdsk(letter);
+                boolean ok = app.getStorageService().runChkdsk(letter);
                 Platform.runLater(() -> {
                     chkdskBtn.setDisable(false);
-                    chkdskBtn.setText("🛠️ Verificar Erros (CHKDSK)");
-                    NotificationManager.show("Varredura de integridade do disco concluída em " + letter, NotificationManager.Type.SUCCESS);
+                    chkdskBtn.setText("Verificar erros (CHKDSK)");
+                    NotificationManager.show(ok ? "Nenhum problema encontrado em " + letter
+                                    : "O CHKDSK relatou problemas ou não pôde rodar em " + letter + " (requer administrador).",
+                            ok ? NotificationManager.Type.SUCCESS : NotificationManager.Type.WARNING);
                 });
             }).start();
         });
 
         // Action 4: Defragmentation
-        ActionButton defragBtn = new ActionButton("🧩 Desfragmentar Volume", "default");
+        ActionButton defragBtn = new ActionButton("Desfragmentar (HD)", "default");
         defragBtn.setMaxWidth(Double.MAX_VALUE);
+        // SSDs must not be defragmented; Windows already optimizes them with TRIM.
+        defragBtn.setDisable(ssd);
         defragBtn.setOnAction(e -> {
             defragBtn.setDisable(true);
             defragBtn.setText("Desfragmentando...");
@@ -194,31 +211,19 @@ public class StoragePage extends VBox {
                 app.getStorageService().runDefrag(letter);
                 Platform.runLater(() -> {
                     defragBtn.setDisable(false);
-                    defragBtn.setText("🧩 Desfragmentar Volume");
+                    defragBtn.setText("Desfragmentar (HD)");
                     NotificationManager.show("Desfragmentação concluída na unidade " + letter, NotificationManager.Type.SUCCESS);
                 });
             }).start();
         });
 
         // Action 5: Disk Cleanup
-        ActionButton cleanBtn = new ActionButton("🧹 Limpeza Temporários", "default");
+        ActionButton cleanBtn = new ActionButton("Abrir Limpeza", "default");
         cleanBtn.setMaxWidth(Double.MAX_VALUE);
-        cleanBtn.setOnAction(e -> {
-            cleanBtn.setDisable(true);
-            cleanBtn.setText("Limpando...");
-            new Thread(() -> {
-                long freed = app.getStorageService().cleanDrive(letter);
-                double mb = freed / (1024.0 * 1024.0);
-                Platform.runLater(() -> {
-                    cleanBtn.setDisable(false);
-                    cleanBtn.setText("🧹 Limpeza Temporários");
-                    NotificationManager.show(String.format("Limpeza de arquivos temporários concluída! (%.1f MB liberados)", mb), NotificationManager.Type.SUCCESS);
-                });
-            }).start();
-        });
+        cleanBtn.setOnAction(e -> app.getNavigationManager().navigateTo("cleanup"));
 
         // Action 6: Detailed SMART Report
-        ActionButton smartBtn = new ActionButton("🔍 Status S.M.A.R.T.", "default");
+        ActionButton smartBtn = new ActionButton("Detalhes S.M.A.R.T.", "default");
         smartBtn.setMaxWidth(Double.MAX_VALUE);
         smartBtn.setOnAction(e -> {
             smartBtn.setDisable(true);

@@ -27,6 +27,22 @@ public class AppSettings {
     private boolean startWithWindows = false;
     private String overlayHotkey = "Ctrl+Shift+O";
 
+    // RAM Guard
+    private boolean ramGuardEnabled = false;
+    private int ramGuardThreshold = 15;          // % of free memory
+    private boolean ramGuardOnlyWhileGaming = false;
+
+    // Game Booster
+    private boolean boosterEnabled = false;
+    private String boosterGames = "cs2.exe";
+    private boolean boosterHighPriority = true;
+    private boolean boosterPowerPlan = true;
+    private boolean boosterCleanRam = true;
+
+    // Shell
+    private boolean sidebarCollapsed = false;
+    private boolean closeToTray = true;
+
     /** Shared Gson instance — pretty-printed for human-readable config files. */
     private static final transient Gson GSON =
             new GsonBuilder().setPrettyPrinting().create();
@@ -86,6 +102,16 @@ public class AppSettings {
         overlayOpacity = Math.max(0.5, Math.min(1.0, overlayOpacity));
         monitorRefreshRate = Math.max(250, Math.min(5000, monitorRefreshRate));
         if (overlayHotkey == null || overlayHotkey.isBlank()) overlayHotkey = "Ctrl+Shift+O";
+        ramGuardThreshold = Math.max(5, Math.min(60, ramGuardThreshold));
+        if (boosterGames == null || boosterGames.isBlank()) boosterGames = "cs2.exe";
+    }
+
+    public static Path defaultPath() {
+        return Path.of(System.getProperty("user.home"), ".nextgen", "settings.json");
+    }
+
+    public boolean save() {
+        return save(defaultPath());
     }
 
     private static boolean isValidPosition(String pos) {
@@ -166,6 +192,29 @@ public class AppSettings {
     public void setOverlayHotkey(String overlayHotkey) {
         this.overlayHotkey = overlayHotkey;
     }
+
+    public boolean isRamGuardEnabled() { return ramGuardEnabled; }
+    public void setRamGuardEnabled(boolean v) { ramGuardEnabled = v; }
+    public int getRamGuardThreshold() { return ramGuardThreshold; }
+    public void setRamGuardThreshold(int v) { ramGuardThreshold = Math.max(5, Math.min(60, v)); }
+    public boolean isRamGuardOnlyWhileGaming() { return ramGuardOnlyWhileGaming; }
+    public void setRamGuardOnlyWhileGaming(boolean v) { ramGuardOnlyWhileGaming = v; }
+
+    public boolean isBoosterEnabled() { return boosterEnabled; }
+    public void setBoosterEnabled(boolean v) { boosterEnabled = v; }
+    public String getBoosterGames() { return boosterGames; }
+    public void setBoosterGames(String v) { boosterGames = v; }
+    public boolean isBoosterHighPriority() { return boosterHighPriority; }
+    public void setBoosterHighPriority(boolean v) { boosterHighPriority = v; }
+    public boolean isBoosterPowerPlan() { return boosterPowerPlan; }
+    public void setBoosterPowerPlan(boolean v) { boosterPowerPlan = v; }
+    public boolean isBoosterCleanRam() { return boosterCleanRam; }
+    public void setBoosterCleanRam(boolean v) { boosterCleanRam = v; }
+
+    public boolean isSidebarCollapsed() { return sidebarCollapsed; }
+    public void setSidebarCollapsed(boolean v) { sidebarCollapsed = v; }
+    public boolean isCloseToTray() { return closeToTray; }
+    public void setCloseToTray(boolean v) { closeToTray = v; }
 
     @Override
     public String toString() {

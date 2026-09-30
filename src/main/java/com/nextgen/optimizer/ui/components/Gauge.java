@@ -36,7 +36,7 @@ public class Gauge extends StackPane {
     private double gaugeSize;
 
     private static final double ARC_WIDTH = 10.0;
-    private static final Color BG_ARC_COLOR = Color.web("#1e2436");
+    private static final Color BG_ARC_COLOR = Color.web("#1b2233");
     private static final double START_ANGLE = 225.0;
     private static final double TOTAL_SWEEP = 270.0; // 225 to -45 = 270 degrees
 
@@ -112,12 +112,18 @@ public class Gauge extends StackPane {
         double ratio = max > 0 ? val / max : 0;
         double sweepAngle = -TOTAL_SWEEP * ratio;
 
-        gc.setStroke(getArcColor(ratio));
+        Color arc = getArcColor(ratio);
+        gc.setStroke(ratio < 0.75
+                ? new javafx.scene.paint.LinearGradient(0, 1, 1, 0, true, javafx.scene.paint.CycleMethod.NO_CYCLE,
+                        new javafx.scene.paint.Stop(0, Color.web("#22d3ee")), new javafx.scene.paint.Stop(1, arc))
+                : arc);
         gc.setLineWidth(ARC_WIDTH);
         gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
         if (Math.abs(sweepAngle) > 0.5) {
+            gc.setEffect(new javafx.scene.effect.DropShadow(10, arc.deriveColor(0, 1, 1, 0.55)));
             gc.strokeArc(arcX, arcY, arcW, arcH, START_ANGLE, sweepAngle,
                     javafx.scene.shape.ArcType.OPEN);
+            gc.setEffect(null);
         }
 
         // --- Center text: value ---
@@ -134,7 +140,7 @@ public class Gauge extends StackPane {
         if (unitText != null && !unitText.isEmpty()) {
             double unitFontSize = gaugeSize * 0.11;
             gc.setFont(Font.font("System", FontWeight.NORMAL, unitFontSize));
-            gc.setFill(Color.web("#8892b0"));
+            gc.setFill(Color.web("#8b95ad"));
             gc.fillText(unitText, w / 2, h / 2 + valueFontSize * 0.6);
         }
 
@@ -143,7 +149,7 @@ public class Gauge extends StackPane {
         if (labelText != null && !labelText.isEmpty()) {
             double labelFontSize = gaugeSize * 0.09;
             gc.setFont(Font.font("System", FontWeight.NORMAL, labelFontSize));
-            gc.setFill(Color.web("#8892b0"));
+            gc.setFill(Color.web("#8b95ad"));
             gc.fillText(labelText, w / 2, h - padding + 2);
         }
     }
@@ -153,16 +159,15 @@ public class Gauge extends StackPane {
      * Smoothly interpolates between thresholds.
      */
     private Color getArcColor(double ratio) {
-        Color green = Color.web("#10b981");
-        Color yellow = Color.web("#f59e0b");
-        Color red = Color.web("#ef4444");
+        Color cyan = Color.web("#22d3ee");
+        Color violet = Color.web("#a78bfa");
+        Color amber = Color.web("#fbbf24");
+        Color red = Color.web("#f87171");
 
-        if (ratio < 0.5) {
-            double t = ratio / 0.5;
-            return green.interpolate(yellow, t);
-        } else if (ratio < 0.8) {
-            double t = (ratio - 0.5) / 0.3;
-            return yellow.interpolate(red, t);
+        if (ratio < 0.75) {
+            return cyan.interpolate(violet, ratio / 0.75);
+        } else if (ratio < 0.9) {
+            return amber;
         } else {
             return red;
         }

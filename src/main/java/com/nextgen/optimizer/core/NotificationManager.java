@@ -54,7 +54,7 @@ public final class NotificationManager {
 
         // Place the toast container at top-right
         StackPane.setAlignment(toastContainer, Pos.TOP_RIGHT);
-        StackPane.setMargin(toastContainer, new Insets(8, 8, 0, 0));
+        StackPane.setMargin(toastContainer, new Insets(54, 14, 0, 0));
 
         rootPane.getChildren().add(toastContainer);
     }

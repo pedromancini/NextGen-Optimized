@@ -6,10 +6,10 @@
 
     <groupId>com.nextgen</groupId>
     <artifactId>nextgen-optimizer</artifactId>
-    <version>1.0.0</version>
+    <version>2.0.0</version>
     <packaging>jar</packaging>
-    <name>NextGen Optimized</name>
-    <description>Premium PC Optimization Tool for Gamers</description>
+    <name>NextGen X</name>
+    <description>NextGen X Performance Suite: safe, reversible Windows optimization for gamers</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -154,11 +154,11 @@
                         </goals>
                         <configuration>
                             <headerType>gui</headerType>
-                            <outfile>${project.build.directory}/NextGenOptimized.exe</outfile>
+                            <outfile>${project.build.directory}/NextGenX.exe</outfile>
                             <jar>${project.build.directory}/${project.artifactId}-${project.version}-shaded.jar</jar>
-                            <errTitle>NextGen Optimized</errTitle>
+                            <errTitle>NextGen X</errTitle>
                             <icon>${project.basedir}/src/main/resources/logo.ico</icon>
-                            <manifest>${project.basedir}/src/main/resources/NextGenOptimized.manifest</manifest>
+                            <manifest>${project.basedir}/src/main/resources/NextGenX.manifest</manifest>
                             <classPath>
                                 <mainClass>${mainClass}</mainClass>
                             </classPath>

@@ -37,7 +37,7 @@ public class ProgressRing extends StackPane {
     private double ringSize;
 
     private static final double STROKE_WIDTH = 8.0;
-    private static final Color BG_RING_COLOR = Color.web("#1e2436");
+    private static final Color BG_RING_COLOR = Color.web("#1b2233");
     private static final Color BLUE = Color.web("#3b82f6");
     private static final Color YELLOW = Color.web("#f59e0b");
     private static final Color RED = Color.web("#ef4444");
@@ -99,10 +99,12 @@ public class ProgressRing extends StackPane {
         double prog = Math.max(0, Math.min(1.0, animatedProgress.get()));
         if (prog > 0.001) {
             double sweepAngle = -360.0 * prog;
-            gc.setStroke(getRingColor(prog));
+            gc.setStroke(getRingPaint(prog));
+            if (positive) gc.setEffect(new javafx.scene.effect.DropShadow(12, Color.web("#22d3ee66")));
             gc.setLineWidth(STROKE_WIDTH);
             gc.setLineCap(StrokeLineCap.ROUND);
             gc.strokeArc(arcX, arcY, arcW, arcH, 90, sweepAngle, ArcType.OPEN);
+            gc.setEffect(null);
         }
 
         // --- Center text ---
@@ -119,11 +121,25 @@ public class ProgressRing extends StackPane {
         String sub = subText.get();
         if (sub != null && !sub.isEmpty()) {
             gc.setTextAlign(TextAlignment.CENTER);
-            gc.setFill(Color.web("#8892b0"));
+            gc.setFill(Color.web("#8b95ad"));
             double subFontSize = ringSize * 0.11;
             gc.setFont(Font.font("System", FontWeight.NORMAL, subFontSize));
             gc.fillText(sub, w / 2, h / 2 + ringSize * 0.2);
         }
+    }
+
+    private boolean positive;
+
+    /** When true, a fuller ring is better (e.g. an optimization score): drawn with the accent gradient. */
+    public void setPositive(boolean positive) {
+        this.positive = positive;
+        draw();
+    }
+
+    private javafx.scene.paint.Paint getRingPaint(double prog) {
+        if (!positive) return getRingColor(prog);
+        return new javafx.scene.paint.LinearGradient(0, 0, 1, 1, true, javafx.scene.paint.CycleMethod.NO_CYCLE,
+                new javafx.scene.paint.Stop(0, Color.web("#22d3ee")), new javafx.scene.paint.Stop(1, Color.web("#a78bfa")));
     }
 
     private Color getRingColor(double prog) {

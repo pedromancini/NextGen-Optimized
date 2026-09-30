@@ -29,11 +29,11 @@ public class CpuPage extends VBox {
 
     private void buildUI() {
         VBox header = new VBox(4);
-        Label title = new Label("🧠 Processador (CPU)");
+        Label title = new Label("Processador (CPU)");
         title.getStyleClass().add("page-title");
         Label sub = new Label("Ajustes avançados do processador, Core Parking e monitoramento de temperatura");
         sub.getStyleClass().add("page-subtitle");
-        header.getChildren().addAll(title, sub);
+        header.getChildren().setAll(com.nextgen.optimizer.ui.components.Ui.pageHeader("mdi2c-chip", "Processador (CPU)", sub.getText()));
 
         // Info Card
         HBox infoCard = new HBox(20);
@@ -41,7 +41,7 @@ public class CpuPage extends VBox {
         infoCard.setAlignment(Pos.CENTER_LEFT);
         infoCard.setPadding(new Insets(24));
 
-        Label icon = new Label("🧠");
+        Label icon = Ui.glyph("🧠");
         icon.setStyle("-fx-font-size: 48px;");
 
         VBox details = new VBox(6);
@@ -110,7 +110,7 @@ public class CpuPage extends VBox {
         row.getStyleClass().add("opt-row");
         row.setAlignment(Pos.CENTER_LEFT);
 
-        Label iconLabel = new Label(icon);
+        Label iconLabel = Ui.glyph(icon);
         iconLabel.getStyleClass().add("opt-row-icon");
 
         VBox textBox = new VBox(2);

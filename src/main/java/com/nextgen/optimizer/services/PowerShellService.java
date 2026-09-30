@@ -130,6 +130,29 @@ public class PowerShellService {
     }
 
     /**
+     * Runs an executable directly (no PowerShell host), which is much faster for
+     * tools such as {@code powercfg.exe} or {@code sc.exe}.
+     */
+    public CommandResult runProcess(long timeoutSeconds, String... command) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> readProcessOutput(process));
+            if (!process.waitFor(Math.max(1, timeoutSeconds), TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                return new CommandResult(readFutureOutput(outputFuture), -1, true);
+            }
+            return new CommandResult(readFutureOutput(outputFuture), process.exitValue(), false);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new CommandResult("", -1, false);
+        } catch (Exception e) {
+            return new CommandResult("", -1, false);
+        }
+    }
+
+    /**
      * Runs a PowerShell command in an elevated (admin) process using
      * {@code Start-Process -Verb RunAs}.
      * <p>

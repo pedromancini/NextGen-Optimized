@@ -40,7 +40,7 @@ public class NetworkPage extends VBox {
         title.getStyleClass().add("page-title");
         Label sub = new Label("Otimize sua conexão para menor latência em jogos");
         sub.getStyleClass().add("page-subtitle");
-        header.getChildren().addAll(title, sub);
+        header.getChildren().setAll(com.nextgen.optimizer.ui.components.Ui.pageHeader("mdi2w-web", "Rede & Ping", sub.getText()));
 
         // Current ping display
         HBox pingRow = buildPingDisplay();
@@ -145,7 +145,7 @@ public class NetworkPage extends VBox {
                 networkStatusBox.setManaged(true);
                 networkStatusBox.getChildren().clear();
 
-                Label stTitle = new Label((success ? "✅ SUCESSO: " : "❌ ERRO: ") + title);
+                Label stTitle = new Label((success ? "SUCESSO: " : "ERRO: ") + title);
                 stTitle.setStyle("-fx-text-fill: " + (success ? "#10b981;" : "#ef4444;") + " -fx-font-weight: bold; -fx-font-size: 13px;");
 
                 Label stDetail = new Label(detail);
@@ -199,7 +199,7 @@ public class NetworkPage extends VBox {
         qa.setAlignment(Pos.CENTER);
         qa.setPrefWidth(130);
 
-        Label iconLabel = new Label(icon);
+        Label iconLabel = Ui.glyph(icon);
         iconLabel.getStyleClass().add("quick-action-icon");
 
         Label textLabel = new Label(label);
@@ -212,50 +212,20 @@ public class NetworkPage extends VBox {
     }
 
     private VBox buildTcpSection() {
-        VBox section = new VBox(12);
-
-        Label sectionTitle = new Label("Otimização TCP");
-        sectionTitle.getStyleClass().add("section-title");
-
-        boolean nagleDisabled = false;
-        try {
-            nagleDisabled = app.getNetworkService().isNagleDisabled();
-        } catch (Exception ignored) {}
-
-        HBox nagleRow = new HBox(12);
-        nagleRow.getStyleClass().add("opt-row");
-        nagleRow.setAlignment(Pos.CENTER_LEFT);
-
-        Label nagleIcon = new Label("⚡");
-        nagleIcon.getStyleClass().add("opt-row-icon");
-
-        VBox nagleText = new VBox(2);
-        HBox.setHgrow(nagleText, Priority.ALWAYS);
-        Label nagleName = new Label("Desativar Nagle Algorithm");
-        nagleName.getStyleClass().add("opt-row-label");
-        Label nagleDesc = new Label("Reduz latência ao enviar pacotes TCP imediatamente");
-        nagleDesc.getStyleClass().add("opt-row-desc");
-        nagleText.getChildren().addAll(nagleName, nagleDesc);
-
-        Label nagleStatus = new Label(nagleDisabled ? "Otimizado" : "Padrão");
-        nagleStatus.getStyleClass().add(nagleDisabled ? "opt-row-status-on" : "opt-row-status-off");
-
-        ToggleSwitch nagleToggle = new ToggleSwitch(nagleDisabled);
-        nagleToggle.setOnAction(e -> {
-            boolean on = nagleToggle.isSelected();
-            nagleStatus.setText(on ? "Otimizado" : "Padrão");
-            nagleStatus.getStyleClass().clear();
-            nagleStatus.getStyleClass().add(on ? "opt-row-status-on" : "opt-row-status-off");
-            new Thread(() -> {
-                app.getNetworkService().disableNagle();
-                Platform.runLater(() -> NotificationManager.show("Nagle Algorithm " + (on ? "desativado" : "ativado"), NotificationManager.Type.SUCCESS));
-            }).start();
-        });
-
-        nagleRow.getChildren().addAll(nagleIcon, nagleText, nagleStatus, nagleToggle);
-        section.getChildren().addAll(sectionTitle, nagleRow);
-
-        return section;
+        VBox card = Ui.card();
+        card.getChildren().add(Ui.cardHeader("mdi2l-lan", "Ajustes de rede do Windows",
+                "Reversíveis individualmente. Também disponíveis na Central de Ajustes."));
+        VBox list = new VBox(0);
+        list.getStyleClass().add("tweak-list");
+        for (String id : new String[]{"network-throttling-off", "delivery-opt-p2p-off", "nagle-off", "background-apps-off"}) {
+            com.nextgen.optimizer.tweaks.Tweak t = app.getTweakService().find(id);
+            if (t == null) continue;
+            TweakRow row = new TweakRow(t, app.getTweakService(), () -> app.getNavigationManager().invalidate("tweaks", "dashboard"));
+            row.setDisable(!app.isElevatedProcess());
+            list.getChildren().add(row);
+        }
+        card.getChildren().add(list);
+        return card;
     }
 
     private VBox buildDnsSection() {
@@ -294,7 +264,7 @@ public class NetworkPage extends VBox {
             default -> "📡";
         };
 
-        Label iconLabel = new Label(emoji);
+        Label iconLabel = Ui.glyph(emoji);
         iconLabel.setStyle("-fx-font-size: 24px;");
 
         Label nameLabel = new Label(name);
@@ -340,7 +310,7 @@ public class NetworkPage extends VBox {
 
         benchmarkResults = new VBox(8);
 
-        ActionButton benchBtn = new ActionButton("🏎️ Testar Melhor DNS para Minha Conexão", "primary");
+        ActionButton benchBtn = new ActionButton("Testar Melhor DNS para Minha Conexão", "primary");
         benchBtn.setOnAction(e -> {
             benchBtn.setLoading(true);
             benchmarkResults.getChildren().clear();
@@ -401,7 +371,7 @@ public class NetworkPage extends VBox {
                         latency.getStyleClass().add(isBest ? "opt-row-status-on" : "opt-row-status-off");
                         latency.setMinWidth(60);
 
-                        Label badge = new Label(isBest ? "⭐ MELHOR" : "");
+                        Label badge = new Label(isBest ? "MELHOR" : "");
                         badge.getStyleClass().addAll("text-success", "font-xs", "font-bold");
                         badge.setMinWidth(70);
 

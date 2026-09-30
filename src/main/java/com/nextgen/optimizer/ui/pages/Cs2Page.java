@@ -2,13 +2,17 @@ package com.nextgen.optimizer.ui.pages;
 
 import com.nextgen.optimizer.App;
 import com.nextgen.optimizer.core.NotificationManager;
-import com.nextgen.optimizer.ui.components.ActionButton;
+import com.nextgen.optimizer.model.AppSettings;
+import com.nextgen.optimizer.services.Cs2ConfigService;
+import com.nextgen.optimizer.tweaks.Tweak;
+import com.nextgen.optimizer.tweaks.TweakService;
+import com.nextgen.optimizer.ui.components.*;
 
-import javafx.application.Platform;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.control.Button;
+import javafx.scene.Node;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -16,477 +20,299 @@ import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.*;
 
-import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * CS2 Optimization Page — Specialized tweaks for Counter-Strike 2
- * to minimize input lag and maximize FPS.
+ * Counter-Strike 2 hub: automatic Game Booster, Windows tweaks specific to
+ * cs2.exe, a managed autoexec and an optional RTSS frame limiter.
  */
 public class Cs2Page extends VBox {
 
+    private static final String[] RELATED_TWEAKS = {
+            "cs2-priority", "cs2-gpu-pref", "cs2-fso-off", "windowed-opt", "game-dvr-off",
+            "mmcss-games", "mouse-accel-off", "sticky-keys-off", "usb-suspend-off"};
+
     private final App app;
-    private ActionButton liveCopyCmdBtn;
-    private Label liveConsoleSubLabel;
-    private int currentSelectedLimit = 141;
+    private final Label installChip = new Label("Procurando…");
+    private final Label runningChip = new Label();
+    private final List<TweakRow> tweakRows = new ArrayList<>();
+    private final TextArea preview = new TextArea();
 
     public Cs2Page(App app) {
         this.app = app;
         getStyleClass().add("page-container");
-        setSpacing(20);
-        setPadding(new Insets(4, 4, 28, 4));
-        buildUI();
+        setSpacing(18);
+
+        installChip.getStyleClass().add("chip");
+        runningChip.getStyleClass().add("chip");
+
+        getChildren().addAll(
+                buildHeader(),
+                new ResponsiveGrid(380, 2, buildBooster(), buildAutoexec()),
+                buildTweaks(),
+                new ResponsiveGrid(380, 2, buildRtss(), buildInGameTips()));
+        detect();
     }
 
-    private void buildUI() {
-        // Header
-        VBox header = new VBox(6);
-        HBox titleRow = new HBox(12);
-        titleRow.setAlignment(Pos.CENTER_LEFT);
-
-        ImageView cs2Logo = new ImageView();
+    private Node buildHeader() {
+        HBox header = Ui.pageHeader("mdi2t-target", "Counter-Strike 2",
+                "Mais FPS, 1% Low estável e menos input lag: Windows, autoexec e Game Booster afinados para o CS2.",
+                installChip, runningChip);
         try {
-            cs2Logo.setImage(new Image(getClass().getResourceAsStream("/cs2_logo.png")));
-            cs2Logo.setFitHeight(32);
-            cs2Logo.setPreserveRatio(true);
-            cs2Logo.setSmooth(true);
+            ImageView logo = new ImageView(new Image(getClass().getResourceAsStream("/cs2_logo.png")));
+            logo.setFitWidth(34);
+            logo.setPreserveRatio(true);
+            logo.setSmooth(true);
+            StackPane tile = (StackPane) header.getChildren().get(0);
+            tile.getChildren().setAll(logo);
         } catch (Exception ignored) {}
-
-        Label title = new Label("Counter-Strike 2 — Otimizador Competitivo");
-        title.getStyleClass().add("page-title");
-        titleRow.getChildren().addAll(cs2Logo, title);
-
-        Label sub = new Label("Prioridade do sistema para cs2.exe, comandos de rede Sub-tick no console e otimizações de tela inteira para máximo FPS e menor Input Lag");
-        sub.getStyleClass().add("page-subtitle");
-        header.getChildren().addAll(titleRow, sub);
-
-        // Section 1: 1% Low & Frame Pacing (RTSS + CS2)
-        VBox onePercentLowSection = buildOnePercentLowCard();
-
-        // Section 2: Windows & Executable Tweaks
-        VBox tweaksSection = buildWindowsTweaksCard();
-
-        // Section 3: Network & Sub-Tick Commands
-        VBox networkSection = buildNetworkCommandsCard();
-
-        getChildren().addAll(header, onePercentLowSection, tweaksSection, networkSection);
+        return header;
     }
 
-    private VBox buildWindowsTweaksCard() {
-        VBox card = new VBox(14);
-        card.getStyleClass().add("card");
-        card.setPadding(new Insets(20));
-
-        Label title = new Label("⚙️ Otimizações do Sistema para CS2");
-        title.getStyleClass().add("card-title");
-
-        VBox list = new VBox(10);
-
-        list.getChildren().addAll(
-            createTweakRow("Prioridade Alta para cs2.exe no Registro Windows",
-                "Define permanentemente a prioridade de processamento do CS2 como Alta para evitar engasgos (stutters)",
-                "Aplicar Prioridade Alta",
-                () -> {
-                    app.getPowerShellService().executeSync("New-Item -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\cs2.exe\\PerfOptions' -Force; New-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\cs2.exe\\PerfOptions' -Name 'CpuPriorityClass' -Value 3 -PropertyType DWord -Force");
-                    NotificationManager.show("Prioridade Alta aplicada para o cs2.exe!", NotificationManager.Type.SUCCESS);
-                }),
-            createTweakRow("Desativar Otimizações de Tela Inteira para Jogos Source 2",
-                "Reduz drasticamente o Input Lag do mouse e do monitor desativando a camada DWM sobreposta",
-                "Desativar Tela Inteira",
-                () -> {
-                    app.getPowerShellService().executeSync("New-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers' -Name 'C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive\\game\\bin\\win64\\cs2.exe' -Value '~ DISABLEDXMAXIMIZEDWINDOWEDMODE' -PropertyType String -Force");
-                    NotificationManager.show("Otimizações de Tela Inteira desativadas para o CS2!", NotificationManager.Type.SUCCESS);
-                }),
-            createTweakRow("Plano de Energia Ultimate Performance Competitivo",
-                "Ativa o plano de energia de Ultra Desempenho (e9a42b02-d5df-448d-aa00-03f14749eb61) sem throttling de clock",
-                "Ativar Ultimate Performance",
-                () -> {
-                    app.getPerformanceService().setUltimatePerformancePlan();
-                    NotificationManager.show("Plano Ultimate Performance ativado!", NotificationManager.Type.SUCCESS);
-                }),
-            createTweakRow("Limpar Cache de Shaders da Steam (Especial CS2)",
-                "Remove Shaders antigos ou corrompidos que causam travamentos após atualizações do jogo",
-                "Limpar Cache Steam",
-                () -> {
-                    cleanSteamShaders();
-                    NotificationManager.show("Cache de Shaders da Steam limpo com sucesso!", NotificationManager.Type.SUCCESS);
-                })
-        );
-
-        card.getChildren().addAll(title, list);
-        return card;
-    }
-
-    private VBox buildNetworkCommandsCard() {
-        VBox card = new VBox(14);
-        card.getStyleClass().add("card");
-        card.setPadding(new Insets(20));
-
-        HBox top = new HBox(10);
-        top.setAlignment(Pos.CENTER_LEFT);
-        Label icon = new Label("🌐");
-        icon.setStyle("-fx-font-size: 24px;");
-        VBox textBox = new VBox(2);
-        Label cardTitle = new Label("Ajustes de Rede e Sub-Tick para Console CS2");
-        cardTitle.setStyle("-fx-font-weight: 800; -fx-font-size: 15px; -fx-text-fill: white;");
-        Label cardSub = new Label("Abra o Console do CS2 (') e cole os comandos abaixo para sincronização de taxa de pacotes");
-        cardSub.setStyle("-fx-font-size: 11px; -fx-text-fill: #94a3b8;");
-        textBox.getChildren().addAll(cardTitle, cardSub);
-        top.getChildren().addAll(icon, textBox);
-
-        HBox inputRow = new HBox(12);
-        inputRow.setAlignment(Pos.CENTER_LEFT);
-
-        String netCmds = "rate 786432; cl_net_buffer_ticks 0; engine_low_latency_sleep_after_client_tick 1";
-        TextField netField = new TextField(netCmds);
-        netField.setEditable(false);
-        netField.setStyle("-fx-background-color: #0d111d; -fx-text-fill: #22c55e; -fx-font-family: 'Consolas', monospace; -fx-font-size: 13px; -fx-font-weight: bold; -fx-padding: 10 14; -fx-border-color: #1e293b; -fx-border-radius: 6; -fx-background-radius: 6;");
-        HBox.setHgrow(netField, Priority.ALWAYS);
-
-        ActionButton copyNetBtn = new ActionButton("📋 Copiar Comandos Console", "primary");
-        copyNetBtn.setOnAction(e -> {
-            copyToClipboard(netField.getText());
-            NotificationManager.show("Comandos de rede copiados!", NotificationManager.Type.SUCCESS);
+    private void detect() {
+        Ui.async(() -> app.getSteamLocator().cs2Root(), root -> {
+            installChip.getStyleClass().removeAll("chip-ok", "chip-warn");
+            if (root != null) {
+                installChip.setText("INSTALADO");
+                installChip.getStyleClass().add("chip-ok");
+                installChip.setTooltip(new javafx.scene.control.Tooltip(root.toString()));
+            } else {
+                installChip.setText("NÃO ENCONTRADO");
+                installChip.getStyleClass().add("chip-warn");
+            }
         });
+        Ui.async(() -> app.getGameBoosterService().findRunningGame().isPresent(), running -> {
+            boolean on = Boolean.TRUE.equals(running);
+            runningChip.setText(on ? "● EM EXECUÇÃO" : "FECHADO");
+            runningChip.getStyleClass().removeAll("chip-live", "chip-muted");
+            runningChip.getStyleClass().add(on ? "chip-live" : "chip-muted");
+        });
+    }
 
-        inputRow.getChildren().addAll(netField, copyNetBtn);
-        card.getChildren().addAll(top, inputRow);
+    // ── Game Booster ────────────────────────────────────────────────
+
+    private Node buildBooster() {
+        AppSettings s = app.getSettings();
+        ToggleSwitch enabled = new ToggleSwitch(s.isBoosterEnabled());
+        ToggleSwitch priority = new ToggleSwitch(s.isBoosterHighPriority());
+        ToggleSwitch plan = new ToggleSwitch(s.isBoosterPowerPlan());
+        ToggleSwitch ram = new ToggleSwitch(s.isBoosterCleanRam());
+        TextField games = new TextField(s.getBoosterGames());
+        games.getStyleClass().add("search-field");
+        games.setPromptText("cs2.exe, outro-jogo.exe");
+
+        Runnable save = () -> {
+            s.setBoosterEnabled(enabled.isSelected());
+            s.setBoosterHighPriority(priority.isSelected());
+            s.setBoosterPowerPlan(plan.isSelected());
+            s.setBoosterCleanRam(ram.isSelected());
+            s.setBoosterGames(games.getText());
+            s.save();
+            app.applyBoosterSettings();
+        };
+        enabled.setOnAction(e -> {
+            save.run();
+            NotificationManager.show(enabled.isSelected() ? "Game Booster ligado: aguardando o jogo abrir." : "Game Booster desligado.",
+                    NotificationManager.Type.INFO);
+        });
+        priority.setOnAction(e -> save.run());
+        plan.setOnAction(e -> save.run());
+        ram.setOnAction(e -> save.run());
+        games.focusedProperty().addListener((o, a, focused) -> {
+            if (!focused) save.run();
+        });
+        enabled.setDisable(!app.isElevatedProcess());
+
+        VBox card = Ui.card("accent-card");
+        card.getChildren().addAll(
+                Ui.cardHeader("mdi2r-rocket-launch-outline", "Game Booster automático",
+                        "Otimiza só enquanto o jogo está aberto e desfaz tudo ao fechar.", enabled),
+                optionRow(priority, "Prioridade alta de CPU para o jogo"),
+                optionRow(plan, "Plano Desempenho Máximo durante a partida"),
+                optionRow(ram, "Liberar cache de RAM ao abrir o jogo"),
+                new Label("Jogos monitorados"), games);
         return card;
     }
 
-    private HBox createTweakRow(String name, String descText, String btnText, Runnable action) {
-        HBox row = new HBox(12);
-        row.getStyleClass().add("process-row");
+    private HBox optionRow(ToggleSwitch toggle, String text) {
+        Label l = new Label(text);
+        l.getStyleClass().add("option-title");
+        l.setWrapText(true);
+        HBox.setHgrow(l, Priority.ALWAYS);
+        l.setMaxWidth(Double.MAX_VALUE);
+        HBox row = new HBox(12, l, toggle);
         row.setAlignment(Pos.CENTER_LEFT);
-
-        VBox info = new VBox(2);
-        Label nameLbl = new Label(name);
-        nameLbl.setStyle("-fx-font-weight: bold; -fx-font-size: 13px; -fx-text-fill: #eaf0f7;");
-        Label descLbl = new Label(descText);
-        descLbl.setStyle("-fx-font-size: 11px; -fx-text-fill: #8b95a8;");
-        info.getChildren().addAll(nameLbl, descLbl);
-        HBox.setHgrow(info, Priority.ALWAYS);
-
-        ActionButton btn = new ActionButton(btnText, "primary");
-        btn.setOnAction(e -> {
-            btn.setDisable(true);
-            new Thread(() -> {
-                action.run();
-                Platform.runLater(() -> btn.setDisable(false));
-            }).start();
-        });
-
-        row.getChildren().addAll(info, btn);
+        row.getStyleClass().add("option-row");
         return row;
     }
 
-    private void copyToClipboard(String text) {
-        Clipboard clipboard = Clipboard.getSystemClipboard();
-        ClipboardContent content = new ClipboardContent();
-        content.putString(text);
-        clipboard.setContent(content);
-    }
+    // ── autoexec ────────────────────────────────────────────────────
 
-    private void cleanSteamShaders() {
-        File steam1 = new File("C:\\Program Files (x86)\\Steam\\steamapps\\shadercache");
-        File steam2 = new File("C:\\Program Files\\Steam\\steamapps\\shadercache");
-        cleanDirectory(steam1);
-        cleanDirectory(steam2);
-    }
+    private Node buildAutoexec() {
+        ComboBox<String> fps = new ComboBox<>();
+        fps.getItems().addAll("0 — sem limite (máximo FPS)", "400", "300", "237 — monitor 240 Hz", "141 — monitor 144 Hz");
+        fps.getSelectionModel().select(0);
+        fps.setMaxWidth(Double.MAX_VALUE);
+        ToggleSwitch sleep = new ToggleSwitch(true);
+        ToggleSwitch rate = new ToggleSwitch(true);
+        ToggleSwitch hud = new ToggleSwitch(false);
 
-    private void cleanDirectory(File dir) {
-        if (dir != null && dir.exists() && dir.isDirectory()) {
-            File[] files = dir.listFiles();
-            if (files != null) {
-                for (File f : files) {
-                    cleanRecursive(f);
-                }
-            }
-        }
-    }
+        preview.setEditable(false);
+        preview.setPrefRowCount(7);
+        preview.getStyleClass().add("code-area");
 
-    private void cleanRecursive(File f) {
-        if (f.isDirectory()) {
-            File[] ch = f.listFiles();
-            if (ch != null) {
-                for (File c : ch) cleanRecursive(c);
-            }
-        }
-        f.delete();
-    }
+        Runnable updatePreview = () -> preview.setText(String.join("\n",
+                app.getCs2ConfigService().buildLines(settings(fps, sleep, rate, hud))));
+        fps.valueProperty().addListener((o, a, b) -> updatePreview.run());
+        sleep.setOnAction(e -> updatePreview.run());
+        rate.setOnAction(e -> updatePreview.run());
+        hud.setOnAction(e -> updatePreview.run());
+        updatePreview.run();
 
-    private VBox buildOnePercentLowCard() {
-        VBox card = new VBox(16);
-        card.getStyleClass().add("card");
-        card.setPadding(new Insets(20));
-
-        // Header
-        HBox header = new HBox(12);
-        header.setAlignment(Pos.CENTER_LEFT);
-        Label icon = new Label("🎯");
-        icon.setStyle("-fx-font-size: 26px;");
-
-        VBox titleBox = new VBox(2);
-        Label title = new Label("Otimizador de 1% Low & Frame Pacing (RTSS + CS2)");
-        title.getStyleClass().add("card-title");
-
-        Label subtitle = new Label("Baseado em testes da comunidade (Reddit/BlurBusters): limitar FPS externamente com RTSS reduz spikes e estabiliza o 1% Low.");
-        subtitle.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 11px;");
-        subtitle.setWrapText(true);
-        titleBox.getChildren().addAll(title, subtitle);
-
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-
-        Label optBadge = new Label("⚠️ OPCIONAL / AVANÇADO");
-        optBadge.setStyle("-fx-background-color: #f59e0b22; -fx-text-fill: #fbbf24; -fx-font-weight: bold; -fx-font-size: 11px; -fx-padding: 4 10; -fx-background-radius: 4;");
-
-        header.getChildren().addAll(icon, titleBox, spacer, optBadge);
-
-        // RTSS Detection & Warnings
-        boolean rtssInstalled = new File("C:\\Program Files (x86)\\RivaTuner Statistics Server\\RTSS.exe").exists()
-                             || new File("C:\\Program Files\\RivaTuner Statistics Server\\RTSS.exe").exists();
-
-        HBox detectionBanner = new HBox(12);
-        detectionBanner.setAlignment(Pos.CENTER_LEFT);
-        detectionBanner.setStyle("-fx-background-color: " + (rtssInstalled ? "#064e3b33;" : "#1e293b;") + " -fx-border-color: " + (rtssInstalled ? "#10b981;" : "#64748b;") + " -fx-border-radius: 8; -fx-background-radius: 8; -fx-padding: 12;");
-
-        Label detIcon = new Label(rtssInstalled ? "✅" : "ℹ️");
-        detIcon.setStyle("-fx-font-size: 20px;");
-
-        VBox detText = new VBox(2);
-        Label detTitle = new Label(rtssInstalled ? "RTSS (RivaTuner) Detectado no Sistema" : "RTSS não detectado na pasta padrão (Você ainda pode gerar o perfil cs2.exe.cfg)");
-        detTitle.setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 12px;");
-        Label detSub = new Label("Dica Afterburner: Desative o monitoramento de 'GPU Power / Power %' nas configurações do MSI Afterburner para evitar micro-stutters de leitura I2C.");
-        detSub.setStyle("-fx-text-fill: #94a3b8; -fx-font-size: 11px;");
-        detSub.setWrapText(true);
-        detText.getChildren().addAll(detTitle, detSub);
-        detectionBanner.getChildren().addAll(detIcon, detText);
-
-        // Quick profile generator buttons
-        Label sectionLabel = new Label("Ativar Limite de FPS no RTSS + CS2 (e visualizar status na hora):");
-        sectionLabel.setStyle("-fx-text-fill: #e2e8f0; -fx-font-weight: bold; -fx-font-size: 12px;");
-
-        VBox statusBox = new VBox(6);
-        statusBox.setStyle("-fx-background-color: #0f172a; -fx-border-color: #334155; -fx-border-radius: 8; -fx-background-radius: 8; -fx-padding: 12;");
-        statusBox.setVisible(false);
-        statusBox.setManaged(false);
-
-        FlowPane limitButtons = new FlowPane(10, 10);
-        java.util.List<Button> btnList = new java.util.ArrayList<>();
-
-        Button btn141 = createRtssLimitBtn("141 FPS (Monitor 144Hz)", 141, btnList, statusBox);
-        Button btn237 = createRtssLimitBtn("237 FPS (Monitor 240Hz)", 237, btnList, statusBox);
-        Button btn357 = createRtssLimitBtn("357 FPS (Monitor 360Hz)", 357, btnList, statusBox);
-        Button btn500 = createRtssLimitBtn("500 FPS (Competitivo)", 500, btnList, statusBox);
-        Button btnOff = createRtssLimitBtn("DESATIVAR LIMITE (FPS LIVRE)", 0, btnList, statusBox);
-
-        btnList.add(btn141);
-        btnList.add(btn237);
-        btnList.add(btn357);
-        btnList.add(btn500);
-        btnList.add(btnOff);
-
-        limitButtons.getChildren().addAll(btnList);
-
-        // CS2 Console Command reminder
-        HBox consoleBox = new HBox(12);
-        consoleBox.getStyleClass().add("card");
-        consoleBox.setAlignment(Pos.CENTER_LEFT);
-        consoleBox.setPadding(new Insets(12));
-
-        VBox consoleText = new VBox(2);
-        HBox.setHgrow(consoleText, Priority.ALWAYS);
-        Label cTitle = new Label("🎮 CS2 já está aberto? Sincronize o jogo rodando ao vivo:");
-        cTitle.setStyle("-fx-text-fill: white; -fx-font-weight: bold; -fx-font-size: 12px;");
-        liveConsoleSubLabel = new Label("O programa reinicia o RTSS na hora e salva no autoexec.cfg! Se o CS2 já estiver aberto, cole no console: fps_max 141");
-        liveConsoleSubLabel.setStyle("-fx-text-fill: #38bdf8; -fx-font-family: 'Consolas', monospace; -fx-font-weight: bold; -fx-font-size: 12px;");
-        consoleText.getChildren().addAll(cTitle, liveConsoleSubLabel);
-
-        liveCopyCmdBtn = new ActionButton("📋 Copiar fps_max 141", "secondary");
-        liveCopyCmdBtn.setOnAction(e -> {
-            copyToClipboard("fps_max " + currentSelectedLimit + "\nengine_no_focus_sleep 0");
-            NotificationManager.show("Comando 'fps_max " + currentSelectedLimit + "' copiado! Cole no console do CS2 (~).", NotificationManager.Type.SUCCESS);
+        ActionButton write = new ActionButton("Salvar no autoexec.cfg", "primary");
+        write.setOnAction(e -> Ui.run(write, () -> app.getCs2ConfigService().write(settings(fps, sleep, rate, hud)), r -> {
+            if (r != null) NotificationManager.show(r.message(), r.success() ? NotificationManager.Type.SUCCESS : NotificationManager.Type.WARNING);
+        }));
+        ActionButton remove = new ActionButton("Remover bloco", "default");
+        remove.setOnAction(e -> Ui.run(remove, () -> app.getCs2ConfigService().removeBlock(), r -> {
+            if (r != null) NotificationManager.show(r.message(), r.success() ? NotificationManager.Type.SUCCESS : NotificationManager.Type.WARNING);
+        }));
+        ActionButton launch = new ActionButton("Copiar opção de inicialização", "default");
+        launch.setOnAction(e -> {
+            copy(Cs2ConfigService.LAUNCH_OPTIONS);
+            NotificationManager.success("Copiado: " + Cs2ConfigService.LAUNCH_OPTIONS + " — cole em Steam › CS2 › Propriedades › Opções de inicialização.");
         });
 
-        consoleBox.getChildren().addAll(consoleText, liveCopyCmdBtn);
-
-        card.getChildren().addAll(header, detectionBanner, sectionLabel, limitButtons, statusBox, consoleBox);
+        VBox card = Ui.card();
+        card.getChildren().addAll(
+                Ui.cardHeader("mdi2c-console", "autoexec.cfg otimizado",
+                        "Grava só um bloco marcado; suas binds e configurações são preservadas (com backup)."),
+                new Label("Limite de FPS (fps_max)"), fps,
+                optionRow(sleep, "Low latency sleep após o tick do cliente"),
+                optionRow(rate, "Taxa de rede máxima (rate 786432)"),
+                optionRow(hud, "Telemetria de FPS/ping no HUD"),
+                preview,
+                new FlowPane(8, 8, write, remove, launch));
         return card;
     }
 
-    private Button createRtssLimitBtn(String label, int fpsLimit, java.util.List<Button> allBtns, VBox statusBox) {
-        String origText = (fpsLimit == 0 ? "❌ " : "⚡ ") + label;
-        Button btn = new Button(origText);
-        btn.setUserData(origText);
-        btn.getStyleClass().addAll("action-btn", "action-btn-secondary");
-        btn.setStyle("-fx-font-size: 12px; -fx-padding: 8 14; -fx-cursor: hand;");
-        btn.setOnAction(e -> {
-            boolean wasAlreadyActive = btn.getText().startsWith("✅") || btn.getText().startsWith("⏹");
+    private Cs2ConfigService.Settings settings(ComboBox<String> fps, ToggleSwitch sleep, ToggleSwitch rate, ToggleSwitch hud) {
+        String v = fps.getValue() == null ? "0" : fps.getValue().split(" ")[0];
+        return new Cs2ConfigService.Settings(Integer.parseInt(v), 120, sleep.isSelected(), rate.isSelected(), hud.isSelected());
+    }
 
-            // Reset ALL buttons back to original label and default style
-            for (Button b : allBtns) {
-                if (b.getUserData() instanceof String orig) {
-                    b.setText(orig);
-                }
-                b.setStyle("-fx-font-size: 12px; -fx-padding: 8 14; -fx-cursor: hand; -fx-background-color: #334155; -fx-text-fill: white;");
-            }
+    // ── Windows tweaks for CS2 ─────────────────────────────────────
 
-            int targetLimit = (wasAlreadyActive && fpsLimit > 0) ? 0 : fpsLimit;
-            currentSelectedLimit = targetLimit;
-            if (liveCopyCmdBtn != null) {
-                liveCopyCmdBtn.setText("📋 Copiar fps_max " + targetLimit);
-            }
-            if (liveConsoleSubLabel != null) {
-                liveConsoleSubLabel.setText("O RTSS é reiniciado na hora! Se o CS2 já estiver aberto, cole no console (~): fps_max " + targetLimit);
-            }
-
-            if (targetLimit == 0) {
-                btn.setStyle("-fx-font-size: 12px; -fx-padding: 8 14; -fx-cursor: hand; -fx-background-color: #f59e0b; -fx-text-fill: white; -fx-font-weight: bold;");
-                btn.setText("⏹ DESATIVADO: FPS LIVRE");
-                applyRtssAndCs2Limit(0, statusBox);
-            } else {
-                btn.setStyle("-fx-font-size: 12px; -fx-padding: 8 14; -fx-cursor: hand; -fx-background-color: #10b981; -fx-text-fill: white; -fx-font-weight: bold; -fx-effect: dropshadow(three-pass-box, rgba(16,185,129,0.4), 8, 0, 0, 0);");
-                btn.setText("✅ ATIVADO: " + targetLimit + " FPS");
-                applyRtssAndCs2Limit(targetLimit, statusBox);
-            }
+    private Node buildTweaks() {
+        ActionButton applyAll = new ActionButton("Aplicar todos", "primary");
+        applyAll.setDisable(!app.isElevatedProcess());
+        applyAll.setOnAction(e -> {
+            List<Tweak> tweaks = tweakRows.stream().map(TweakRow::tweak).toList();
+            Ui.run(applyAll, () -> app.getTweakService().applyAll(tweaks, null), results -> {
+                if (results == null) return;
+                long changed = results.stream().filter(TweakService.Result::changed).count();
+                NotificationManager.success(changed + " ajustes aplicados para o CS2.");
+                tweakRows.forEach(TweakRow::refresh);
+                app.getNavigationManager().invalidate("tweaks", "dashboard");
+            });
         });
-        return btn;
-    }
-
-    private void applyRtssAndCs2Limit(int limit, VBox statusBox) {
-        new Thread(() -> {
-            try {
-                String content = "[Framerate]\n" +
-                                 "Limit=" + limit + "\n" +
-                                 "LimitDenominator=1\n\n" +
-                                 "[Settings]\n" +
-                                 "FramerateLimit=" + limit + "\n" +
-                                 "CustomDirect3DSupport=1\n" +
-                                 "EnableHooking=1\n" +
-                                 "SyncToScanline=0\n";
-
-                File profilesDir = new File("C:\\Program Files (x86)\\RivaTuner Statistics Server\\Profiles");
-                if (!profilesDir.exists()) {
-                    profilesDir = new File("C:\\Program Files\\RivaTuner Statistics Server\\Profiles");
-                }
-
-                boolean savedInSystem = false;
-                File profileCs2 = null;
-                if (profilesDir.exists()) {
-                    profileCs2 = new File(profilesDir, "cs2.exe.cfg");
-                    savedInSystem = safeWriteProfile(profileCs2, content);
-
-                    File profileGlobal = new File(profilesDir, "Global");
-                    safeWriteProfile(profileGlobal, content);
-                }
-
-                // Always save backup to local NextGen_RTSS_Profiles folder
-                File localDir = new File("NextGen_RTSS_Profiles");
-                if (!localDir.exists()) localDir.mkdirs();
-                File localCs2 = new File(localDir, "cs2.exe.cfg");
-                try {
-                    java.nio.file.Files.writeString(localCs2.toPath(), content);
-                } catch (Exception ignored) {}
-
-                // Update CS2 autoexec.cfg with exact limit so CS2 engine limits natively
-                File steamCfg = new File("C:\\Program Files (x86)\\Steam\\steamapps\\common\\Counter-Strike Global Offensive\\game\\csgo\\cfg");
-                boolean autoexecUpdated = false;
-                if (steamCfg.exists()) {
-                    File autoexec = new File(steamCfg, "autoexec.cfg");
-                    String cfgText = "// NextGen Optimized - CS2 1% Low & Frame Pacing\n" +
-                                     "fps_max " + limit + "\n" +
-                                     "engine_no_focus_sleep 0\n";
-                    autoexecUpdated = safeWriteProfile(autoexec, cfgText);
-                }
-
-                // Refresh/restart RTSS immediately so it applies the new limit live to any running game
-                File rtssExe = new File("C:\\Program Files (x86)\\RivaTuner Statistics Server\\RTSS.exe");
-                if (!rtssExe.exists()) {
-                    rtssExe = new File("C:\\Program Files\\RivaTuner Statistics Server\\RTSS.exe");
-                }
-                boolean rtssRefreshed = false;
-                if (rtssExe.exists()) {
-                    try {
-                        String refreshCmd = "Stop-Process -Name RTSS -Force -ErrorAction SilentlyContinue; " +
-                                            "Start-Sleep -Milliseconds 150; " +
-                                            "Start-Process -FilePath '" + rtssExe.getAbsolutePath() + "'";
-                        app.getPowerShellService().executeSync(refreshCmd);
-                        rtssRefreshed = true;
-                    } catch (Exception ignored) {}
-                }
-
-                final boolean sysOk = savedInSystem;
-                final boolean cfgOk = autoexecUpdated;
-                final boolean rtssOk = rtssRefreshed;
-                final String finalPath = sysOk ? profileCs2.getAbsolutePath() : localCs2.getAbsolutePath();
-
-                Platform.runLater(() -> {
-                    statusBox.setVisible(true);
-                    statusBox.setManaged(true);
-                    statusBox.getChildren().clear();
-
-                    if (limit == 0) {
-                        Label stTitle = new Label("⏹ LIMITE DESATIVADO (FPS LIVRE / ILIMITADO)");
-                        stTitle.setStyle("-fx-text-fill: #f59e0b; -fx-font-weight: bold; -fx-font-size: 13px;");
-
-                        Label item1 = new Label("✔ Perfil RTSS liberado ao vivo em: " + finalPath + " (Sem limite)");
-                        item1.setStyle("-fx-text-fill: #e2e8f0; -fx-font-size: 11px;");
-
-                        Label item2 = new Label("🎮 Jogo já aberto? Se o CS2 tiver limite interno, cole no console (~): fps_max 0");
-                        item2.setStyle("-fx-text-fill: #38bdf8; -fx-font-weight: bold; -fx-font-size: 11px;");
-
-                        statusBox.getChildren().addAll(stTitle, item1, item2);
-                        NotificationManager.show("⏹ Limite de FPS desativado! RTSS atualizado em tempo real.", NotificationManager.Type.INFO);
-                    } else {
-                        Label stTitle = new Label("✅ LIMITE DE " + limit + " FPS ATIVADO E SINCRONIZADO AO VIVO");
-                        stTitle.setStyle("-fx-text-fill: #10b981; -fx-font-weight: bold; -fx-font-size: 13px;");
-
-                        Label item1 = new Label("✔ Perfil RTSS salvo em: " + finalPath + " (" + limit + " FPS)");
-                        item1.setStyle("-fx-text-fill: #e2e8f0; -fx-font-size: 11px;");
-
-                        Label item2 = new Label(rtssOk ? "⚡ RivaTuner reiniciado: " + limit + " FPS aplicado em tempo real no jogo rodando!"
-                                                       : "✔ Perfil do RivaTuner sincronizado");
-                        item2.setStyle("-fx-text-fill: #10b981; -fx-font-weight: bold; -fx-font-size: 11px;");
-
-                        Label item3 = new Label("🎮 CS2 já está aberto? Se não mudar na hora, cole no console (~): fps_max " + limit);
-                        item3.setStyle("-fx-text-fill: #38bdf8; -fx-font-weight: bold; -fx-font-size: 11px;");
-
-                        statusBox.getChildren().addAll(stTitle, item1, item2, item3);
-                        NotificationManager.show("✅ Limite de " + limit + " FPS aplicado no RTSS e CS2!", NotificationManager.Type.SUCCESS);
-                    }
-                });
-            } catch (Exception ex) {
-                Platform.runLater(() -> {
-                    statusBox.setVisible(true);
-                    statusBox.setManaged(true);
-                    statusBox.getChildren().clear();
-
-                    Label stErr = new Label("❌ ERRO AO ATIVAR: " + ex.getMessage());
-                    stErr.setStyle("-fx-text-fill: #ef4444; -fx-font-weight: bold; -fx-font-size: 12px;");
-                    statusBox.getChildren().add(stErr);
-                    NotificationManager.show("Erro ao aplicar limite: " + ex.getMessage(), NotificationManager.Type.ERROR);
-                });
-            }
-        }).start();
-    }
-
-    private boolean safeWriteProfile(File targetFile, String content) {
-        try {
-            if (targetFile.getParentFile() != null && !targetFile.getParentFile().exists()) {
-                targetFile.getParentFile().mkdirs();
-            }
-            java.nio.file.Files.writeString(targetFile.toPath(), content);
-            return true;
-        } catch (Exception e) {
-            try {
-                File tempFile = new File(System.getProperty("java.io.tmpdir"), targetFile.getName());
-                java.nio.file.Files.writeString(tempFile.toPath(), content);
-                String psCmd = "Copy-Item -Path '" + tempFile.getAbsolutePath() + "' -Destination '" + targetFile.getAbsolutePath() + "' -Force";
-                app.getPowerShellService().executeSync(psCmd);
-                return targetFile.exists();
-            } catch (Exception ex2) {
-                return false;
-            }
+        VBox list = new VBox(0);
+        list.getStyleClass().add("tweak-list");
+        for (String id : RELATED_TWEAKS) {
+            Tweak t = app.getTweakService().find(id);
+            if (t == null) continue;
+            TweakRow row = new TweakRow(t, app.getTweakService(), () -> app.getNavigationManager().invalidate("tweaks", "dashboard"));
+            row.setDisable(!app.isElevatedProcess());
+            tweakRows.add(row);
+            list.getChildren().add(row);
         }
+        VBox card = Ui.card();
+        card.getChildren().addAll(Ui.cardHeader("mdi2m-microsoft-windows", "Windows afinado para o CS2",
+                "Todos reversíveis individualmente.", applyAll), list);
+        return card;
+    }
+
+    // ── RTSS ────────────────────────────────────────────────────────
+
+    private Node buildRtss() {
+        Path rtssDir = findRtss();
+        Label status = Ui.muted(rtssDir != null
+                ? "RTSS encontrado. O perfil é gravado só para cs2.exe — seu perfil Global não é alterado."
+                : "RivaTuner Statistics Server não encontrado. Instale-o (vem com o MSI Afterburner) para usar o limitador externo.");
+        FlowPane buttons = new FlowPane(8, 8);
+        for (int limit : new int[]{0, 141, 237, 357}) {
+            ActionButton b = new ActionButton(limit == 0 ? "Sem limite" : limit + " FPS", limit == 0 ? "default" : "default");
+            b.setDisable(rtssDir == null);
+            b.setOnAction(e -> Ui.run(b, () -> writeRtssProfile(rtssDir, limit), msg -> {
+                if (msg != null) NotificationManager.show(msg, NotificationManager.Type.INFO);
+            }));
+            buttons.getChildren().add(b);
+        }
+        VBox card = Ui.card();
+        card.getChildren().addAll(
+                Ui.cardHeader("mdi2s-speedometer", "Limitador de FPS (RTSS)",
+                        "Limitar o FPS logo abaixo da taxa do monitor estabiliza o frametime e o 1% Low."),
+                status, buttons,
+                Ui.muted("Com G-SYNC/FreeSync: limite 3 FPS abaixo do Hz do monitor. Sem sincronização adaptativa, \"Sem limite\" dá a menor latência."));
+        return card;
+    }
+
+    private Path findRtss() {
+        for (String base : new String[]{"C:\\Program Files (x86)\\RivaTuner Statistics Server", "C:\\Program Files\\RivaTuner Statistics Server"}) {
+            Path p = Path.of(base);
+            if (Files.isRegularFile(p.resolve("RTSS.exe"))) return p;
+        }
+        return null;
+    }
+
+    private String writeRtssProfile(Path rtssDir, int limit) {
+        String content = "[Framerate]\r\nLimit=" + limit + "\r\nLimitDenominator=1\r\n";
+        Path profile = rtssDir.resolve("Profiles").resolve("cs2.exe.cfg");
+        try {
+            Files.createDirectories(profile.getParent());
+            if (Files.exists(profile)) Files.copy(profile, profile.resolveSibling("cs2.exe.cfg.nextgen.bak"),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            Files.writeString(profile, content, StandardCharsets.US_ASCII);
+        } catch (Exception e) {
+            return "Não foi possível gravar o perfil do RTSS: " + e.getMessage();
+        }
+        boolean running = ProcessHandle.allProcesses().anyMatch(p -> p.info().command()
+                .map(c -> c.toLowerCase().endsWith("rtss.exe")).orElse(false));
+        if (running) {
+            // RTSS reloads profiles on restart.
+            app.getPowerShellService().executeSync("Stop-Process -Name RTSS -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300; "
+                    + "Start-Process -FilePath '" + rtssDir.resolve("RTSS.exe").toString().replace("'", "''") + "'");
+        }
+        return limit == 0 ? "RTSS: limite do CS2 removido." : "RTSS: CS2 limitado a " + limit + " FPS" + (running ? " (RTSS reiniciado)." : ".");
+    }
+
+    // ── In-game tips ────────────────────────────────────────────────
+
+    private Node buildInGameTips() {
+        VBox card = Ui.card();
+        card.getChildren().add(Ui.cardHeader("mdi2l-lightbulb-on-outline", "Configurações dentro do jogo", "Recomendações competitivas."));
+        String[][] tips = {
+                {"NVIDIA Reflex", "Ativado + Boost — a maior redução de input lag disponível."},
+                {"Modo de exibição", "Tela cheia. Janela sem borda só com as otimizações para jogos em janela."},
+                {"Contraste de jogadores", "Ativado — facilita enxergar inimigos."},
+                {"Sombras / Detalhes", "Sombras em Alto ajudam a ver oponentes; o resto em Baixo para FPS."},
+                {"FSR / Upscaling", "Desligado. Use resolução nativa ou esticada, sem upscaler."},
+                {"Opções de inicialização", "Apenas \"+exec autoexec\". Evite -threads e -high (o NextGen X cuida da prioridade)."}};
+        for (String[] tip : tips) {
+            Label t = new Label(tip[0]);
+            t.getStyleClass().add("option-title");
+            card.getChildren().add(new VBox(2, t, Ui.muted(tip[1])));
+        }
+        return card;
+    }
+
+    private static void copy(String text) {
+        ClipboardContent content = new ClipboardContent();
+        content.putString(text);
+        Clipboard.getSystemClipboard().setContent(content);
     }
 }

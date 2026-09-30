@@ -45,8 +45,10 @@ public class MetricCard extends VBox {
             fontIcon.getStyleClass().add("metric-card-icon");
             iconLabel.setGraphic(fontIcon);
         } catch (Exception e) {
-            // Fallback: use the string as text if it's not a valid Ikonli literal
-            iconLabel.setText(icon);
+            // Not an Ikonli literal: map legacy emoji to a vector icon, else show the text.
+            Label glyph = Ui.glyph(icon);
+            if (glyph.getGraphic() != null) iconLabel.setGraphic(glyph.getGraphic());
+            else iconLabel.setText(icon);
         }
 
         // --- Label ---

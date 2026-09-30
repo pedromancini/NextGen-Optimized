@@ -146,18 +146,13 @@ public class BackupService {
             Object originalValue = null;
             String type = "DWORD"; // default
 
-            if (registryService.valueExists(root, registryPath, valueName)) {
-                // Try reading as DWORD first
-                int intVal = registryService.getIntValue(root, registryPath, valueName);
-                if (intVal != -1) {
-                    originalValue = intVal;
-                    type = "DWORD";
-                } else {
-                    // Fall back to string
-                    String strVal = registryService.getStringValue(root, registryPath, valueName);
-                    originalValue = strVal;
-                    type = "STRING";
-                }
+            Object raw = registryService.getRawValue(root, registryPath, valueName);
+            if (raw instanceof Integer intVal) {
+                originalValue = intVal;
+                type = "DWORD";
+            } else if (raw != null) {
+                originalValue = String.valueOf(raw);
+                type = "STRING";
             }
             // If value doesn't exist, we still record it with null originalValue
             // so restore knows to delete it

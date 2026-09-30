@@ -6,6 +6,8 @@ package com.nextgen.optimizer;
  */
 public class Launcher {
     public static void main(String[] args) {
+        // OSHI logs every unsupported sensor query; keep the console quiet.
+        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "error");
         App.main(args);
     }
 }

@@ -1,19 +1,14 @@
 package com.nextgen.optimizer.services;
 
-import com.sun.jna.platform.win32.WinReg;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Network optimization service: DNS management, Nagle algorithm control,
- * TCP/IP reset operations, adapter diagnostics, and DNS benchmarking.
+ * Network service: DNS management, TCP/IP reset operations and DNS
+ * benchmarking. Registry-level network tweaks live in the tweak catalog.
  */
 public class NetworkService {
-
-    private static final WinReg.HKEY HKLM = WinReg.HKEY_LOCAL_MACHINE;
-    private static final String TCPIP_INTERFACES_PATH =
-            "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces";
 
     private final PowerShellService ps;
     private final RegistryService reg;
@@ -67,78 +62,6 @@ public class NetworkService {
      */
     public String resetTcpIp() {
         return ps.executeSync("netsh int ip reset");
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  NAGLE ALGORITHM
-    // ═══════════════════════════════════════════════════════════════
-
-    /**
-     * Disable Nagle's algorithm on the active network adapter for lower latency.
-     * Sets TcpNoDelay=1 and TcpAckFrequency=1 in the registry.
-     *
-     * @return true if successful
-     */
-    public boolean disableNagle() {
-        String adapterGuid = getActiveAdapterGuid();
-        if (adapterGuid == null || adapterGuid.isEmpty()) return false;
-
-        String path = TCPIP_INTERFACES_PATH + "\\" + adapterGuid;
-
-        // Backup current values
-        BackupService.BackupSnapshot snap = backup.createBackup("nagle-disable");
-        backup.addEntry(snap, path, "TcpNoDelay", HKLM);
-        backup.addEntry(snap, path, "TcpAckFrequency", HKLM);
-        backup.saveBackup(snap);
-
-        boolean ok1 = reg.setIntValue(HKLM, path, "TcpNoDelay", 1);
-        boolean ok2 = reg.setIntValue(HKLM, path, "TcpAckFrequency", 1);
-        return ok1 && ok2;
-    }
-
-    /**
-     * Check if Nagle's algorithm is disabled on the active adapter.
-     */
-    public boolean isNagleDisabled() {
-        String adapterGuid = getActiveAdapterGuid();
-        if (adapterGuid == null || adapterGuid.isEmpty()) return false;
-
-        String path = TCPIP_INTERFACES_PATH + "\\" + adapterGuid;
-        int noDelay = reg.getIntValue(HKLM, path, "TcpNoDelay", 0);
-        int ackFreq = reg.getIntValue(HKLM, path, "TcpAckFrequency", 2);
-        return noDelay == 1 && ackFreq == 1;
-    }
-
-    /**
-     * Find the GUID of the active network adapter by looking for one with a
-     * DhcpIPAddress or IPAddress set.
-     *
-     * @return the adapter GUID (e.g. "{XXXXXXXX-...}"), or null
-     */
-    public String getActiveAdapterGuid() {
-        try {
-            String[] subKeys = reg.getSubKeys(HKLM, TCPIP_INTERFACES_PATH);
-            for (String guid : subKeys) {
-                String path = TCPIP_INTERFACES_PATH + "\\" + guid;
-
-                // Check if this adapter has an IP address assigned
-                String dhcpIp = reg.getStringValue(HKLM, path, "DhcpIPAddress", "");
-                String staticIp = reg.getStringValue(HKLM, path, "IPAddress", "");
-
-                // Filter out 0.0.0.0 and empty
-                if (isValidIp(dhcpIp) || isValidIp(staticIp)) {
-                    return guid;
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("[NetworkService] Error finding active adapter: " + e.getMessage());
-        }
-
-        // Fallback: use PowerShell to find the active adapter GUID
-        String psOutput = ps.executeSync(
-                "(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1 " +
-                "-ExpandProperty InterfaceGuid)");
-        return (psOutput != null && !psOutput.isBlank()) ? psOutput.trim() : null;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -303,9 +226,6 @@ public class NetworkService {
         }
     }
 
-    private boolean isValidIp(String ip) {
-        return ip != null && !ip.isEmpty() && !ip.equals("0.0.0.0");
-    }
 
     private boolean isValidIpv4(String ip) {
         if (ip == null || ip.isBlank()) return false;

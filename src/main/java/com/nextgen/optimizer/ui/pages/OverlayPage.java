@@ -37,7 +37,7 @@ public class OverlayPage extends VBox {
         title.getStyleClass().add("page-title");
         Label sub = new Label("Configure quais métricas de FPS, 1% Low e temperaturas aparecem no painel flutuante");
         sub.getStyleClass().add("page-subtitle");
-        header.getChildren().addAll(title, sub);
+        header.getChildren().setAll(com.nextgen.optimizer.ui.components.Ui.pageHeader("mdi2m-monitor-eye", "Overlay OSD em Jogo", sub.getText()));
 
         // Master Switch Pod
         HBox masterCard = buildMasterCard();
@@ -135,7 +135,7 @@ public class OverlayPage extends VBox {
         VBox section = new VBox(12);
         section.getStyleClass().add("card");
 
-        Label title = new Label("🎮 Quadros por Segundo & Estabilidade");
+        Label title = new Label("Quadros por Segundo & Estabilidade");
         title.getStyleClass().add("card-title");
 
         section.getChildren().addAll(
@@ -151,7 +151,7 @@ public class OverlayPage extends VBox {
         VBox section = new VBox(12);
         section.getStyleClass().add("card");
 
-        Label title = new Label("⚡ Monitoramento de Hardware");
+        Label title = new Label("Monitoramento de Hardware");
         title.getStyleClass().add("card-title");
 
         section.getChildren().addAll(
@@ -169,7 +169,7 @@ public class OverlayPage extends VBox {
         VBox section = new VBox(12);
         section.getStyleClass().add("card");
 
-        Label title = new Label("🌐 Conexão & Sistema");
+        Label title = new Label("Conexão & Sistema");
         title.getStyleClass().add("card-title");
 
         section.getChildren().addAll(

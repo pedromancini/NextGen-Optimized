@@ -23,8 +23,8 @@ public class PrivacyPage extends VBox {
         service = new PrivacyService(app.getRegistryService(), app.getBackupService(), app.getPowerShellService());
         getStyleClass().addAll("page-container", "privacy-page");
         setSpacing(18);
-        getChildren().addAll(label("Privacidade do Windows", "page-title"),
-            label("Controle o que o Windows aprende sobre você.", "page-subtitle"));
+        getChildren().add(com.nextgen.optimizer.ui.components.Ui.pageHeader("mdi2s-shield-lock-outline",
+            "Privacidade do Windows", "Controle o que o Windows aprende sobre você."));
         TextField search = new TextField();
         search.setPromptText("Buscar: Recall, digitação, publicidade...");
         search.getStyleClass().add("process-search-field");

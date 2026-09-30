@@ -3,363 +3,269 @@ package com.nextgen.optimizer.ui.pages;
 import com.nextgen.optimizer.App;
 import com.nextgen.optimizer.core.NotificationManager;
 import com.nextgen.optimizer.model.SystemSnapshot;
-import com.nextgen.optimizer.ui.components.ActionButton;
-import com.nextgen.optimizer.ui.components.Gauge;
-import com.nextgen.optimizer.ui.components.MetricCard;
+import com.nextgen.optimizer.services.CleanupService;
+import com.nextgen.optimizer.services.MemoryService;
+import com.nextgen.optimizer.tweaks.Tweak;
+import com.nextgen.optimizer.tweaks.TweakService;
+import com.nextgen.optimizer.ui.components.*;
 
-import javafx.application.Platform;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.*;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
- * Dashboard — operational home screen with live health, focused actions,
- * and clear next steps instead of decorative noise.
+ * Home: optimization score, one-click entry to the full optimization, live
+ * hardware gauges and quick actions that report what they actually did.
  */
 public class DashboardPage extends VBox {
 
     private final App app;
+    private final ProgressRing scoreRing = new ProgressRing(132);
+    private final Label scoreTitle = new Label("Analisando seu PC…");
+    private final Label scoreDetail = new Label("Verificando os ajustes recomendados para o perfil Gamer.");
+    private final Label boosterValue = new Label("--");
+    private final Label cs2Value = new Label("--");
+    private final Label tweaksValue = new Label("--");
     private Gauge cpuGauge, gpuGauge, ramGauge;
-    private MetricCard pingCard, cpuTempCard, gpuTempCard, diskCard;
-    private Label scoreLabel, scoreDescription, healthTitle, healthDetail;
-    private Label cpuMini, gpuMini, ramMini, gpuProfileStatus;
+    private Label cpuSub, gpuSub, ramSub;
+    private Label pingValue, cpuTemp, gpuTemp, diskValue;
+    private final Label specCpu = new Label("--"), specGpu = new Label("--"), specRam = new Label("--");
 
     public DashboardPage(App app) {
         this.app = app;
         getStyleClass().add("page-container");
-        setSpacing(16);
-        setPadding(new Insets(16, 14, 28, 14));
-        buildUI();
-        bindMonitoring();
-        Platform.runLater(this::updateScore);
+        setSpacing(18);
+
+        Label live = new Label("● AO VIVO");
+        live.getStyleClass().add("live-badge");
+        getChildren().addAll(
+                Ui.pageHeader("mdi2v-view-dashboard-outline", "Painel",
+                        "Estado do seu PC em tempo real e o caminho mais curto para mais FPS.", live),
+                buildHero(),
+                buildGauges(),
+                Ui.sectionLabel("Ações rápidas"),
+                buildQuickActions(),
+                buildSystemCard());
+
+        app.getSystemInfoService().snapshotProperty().addListener((o, a, s) -> {
+            if (s != null) update(s);
+        });
+        update(app.getSystemInfoService().getLatestSnapshot());
+        refreshScore();
     }
 
-    private void buildUI() {
-        HBox header = buildHeader();
-        VBox commandCenter = new VBox(16);
-        commandCenter.setAlignment(Pos.TOP_LEFT);
+    // ── Hero ────────────────────────────────────────────────────────
 
-        VBox healthPanel = buildHealthPanel();
-        VBox actionPanel = buildActionPanel();
-        HBox.setHgrow(healthPanel, Priority.ALWAYS);
-        HBox.setHgrow(actionPanel, Priority.ALWAYS);
-        commandCenter.getChildren().addAll(healthPanel, actionPanel);
+    private Node buildHero() {
+        scoreRing.setPositive(true);
+        scoreRing.setCenterText("--");
+        scoreRing.setSubText("otimizado");
 
-        HBox gauges = buildGaugeRow();
-        HBox metrics = buildMetricsRow();
-        HBox shortcuts = buildShortcutRow();
+        scoreTitle.getStyleClass().add("hero-title");
+        scoreTitle.setWrapText(true);
+        scoreDetail.getStyleClass().add("hero-sub");
+        scoreDetail.setWrapText(true);
 
-        getChildren().addAll(header, gauges, commandCenter, metrics, shortcuts);
+        ActionButton full = new ActionButton("Otimização Full", "primary");
+        full.setOnAction(e -> app.getNavigationManager().navigateTo("full-opt"));
+        ActionButton tweaks = new ActionButton("Central de Ajustes", "default");
+        tweaks.setOnAction(e -> app.getNavigationManager().navigateTo("tweaks"));
+        FlowPane buttons = new FlowPane(10, 10, full, tweaks);
+
+        VBox text = new VBox(8, Ui.sectionLabel("Pontuação de otimização"), scoreTitle, scoreDetail, buttons);
+        text.setMinWidth(0);
+        HBox.setHgrow(text, Priority.ALWAYS);
+
+        VBox facts = new VBox(10,
+                fact("mdi2r-rocket-launch-outline", "Game Booster", boosterValue),
+                fact("mdi2t-target", "Counter-Strike 2", cs2Value),
+                fact("mdi2t-tune-variant", "Ajustes do NextGen X", tweaksValue));
+        facts.getStyleClass().add("hero-facts");
+        facts.setMinWidth(230);
+
+        HBox hero = new HBox(26, scoreRing, text, facts);
+        hero.setAlignment(Pos.CENTER_LEFT);
+        hero.getStyleClass().addAll("card", "hero-card");
+
+        // Stack the facts under the text on narrow windows.
+        hero.widthProperty().addListener((o, a, w) -> {
+            boolean narrow = w.doubleValue() < 820;
+            facts.setVisible(!narrow);
+            facts.setManaged(!narrow);
+        });
+        return hero;
     }
 
-    private HBox buildHeader() {
-        HBox header = new HBox(14);
-        header.setAlignment(Pos.CENTER_LEFT);
-        header.getStyleClass().add("dashboard-header");
-
-        VBox titleBox = new VBox(3);
-        Label title = new Label("Painel do Sistema");
-        title.getStyleClass().add("page-title");
-        Label subtitle = new Label("Status em tempo real, otimizações e atalhos seguros para jogos");
-        subtitle.getStyleClass().add("page-subtitle");
-        subtitle.setWrapText(true);
-        titleBox.setMinWidth(0);
-        titleBox.getChildren().addAll(title, subtitle);
-
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-
-        Label liveBadge = new Label("● Monitorando");
-        liveBadge.getStyleClass().add("live-badge");
-
-        header.getChildren().addAll(titleBox, spacer, liveBadge);
-        return header;
-    }
-
-    private VBox buildHealthPanel() {
-        VBox panel = new VBox(14);
-        panel.getStyleClass().addAll("card", "dashboard-command-card");
-        panel.setPadding(new Insets(20));
-
-        HBox top = new HBox(14);
-        top.setAlignment(Pos.CENTER_LEFT);
-
-        VBox scoreBox = new VBox(2);
-        scoreLabel = new Label("--");
-        scoreLabel.getStyleClass().add("dashboard-score");
-        scoreLabel.setMinWidth(110);
-        scoreDescription = new Label("Verificando ajustes");
-        scoreDescription.setWrapText(true);
-        scoreDescription.getStyleClass().addAll("font-sm", "text-secondary");
-        scoreBox.getChildren().addAll(scoreLabel, scoreDescription);
-        scoreBox.setMinWidth(160);
-
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-
-        VBox healthBox = new VBox(4);
-        healthBox.setAlignment(Pos.CENTER_RIGHT);
-        healthBox.setMinWidth(0);
-        HBox.setHgrow(healthBox, Priority.ALWAYS);
-        healthTitle = new Label("Sistema estável");
-        healthTitle.getStyleClass().addAll("font-lg", "font-bold", "text-primary");
-        healthTitle.setWrapText(true);
-        healthDetail = new Label("Aguardando leitura completa do monitor");
-        healthDetail.getStyleClass().addAll("font-sm", "text-secondary");
-        healthDetail.setWrapText(true);
-        healthBox.getChildren().addAll(healthTitle, healthDetail);
-
-        top.getChildren().addAll(scoreBox, spacer, healthBox);
-
-        FlowPane miniStats = new FlowPane(10, 10);
-        cpuMini = miniStat("CPU", "--");
-        gpuMini = miniStat("GPU", "--");
-        ramMini = miniStat("RAM", "--");
-        gpuProfileStatus = miniStat("NVIDIA", "Verificando Inspector");
-        java.util.concurrent.CompletableFuture.supplyAsync(() -> app.getGpuService().findNvidiaProfileInspector())
-            .whenComplete((path, error) -> Platform.runLater(() -> gpuProfileStatus.setText(
-                error != null ? "NVIDIA  Consulta indisponível" : path.isBlank() ? "NVIDIA  Inspector não localizado" : "NVIDIA  Inspector pronto")));
-        miniStats.getChildren().addAll(cpuMini, gpuMini, ramMini, gpuProfileStatus);
-
-        panel.getChildren().addAll(top, miniStats);
-        return panel;
-    }
-
-    private Label miniStat(String name, String value) {
-        Label label = new Label(name + "  " + value);
-        label.getStyleClass().add("mini-stat");
-        label.setMinWidth(Region.USE_PREF_SIZE);
-        return label;
-    }
-
-    private VBox buildActionPanel() {
-        VBox panel = new VBox(12);
-        panel.getStyleClass().addAll("card", "dashboard-actions-card");
-        panel.setPadding(new Insets(20));
-
-        Label title = new Label("Ações principais");
-        title.getStyleClass().add("card-title");
-
-        HBox primaryRow = new HBox(10);
-        ActionButton gameMode = new ActionButton("Modo Game", "primary");
-        gameMode.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(gameMode, Priority.ALWAYS);
-        gameMode.setOnAction(e -> runButtonAction(gameMode, () -> {
-            app.getPerformanceService().activateGameMode().join();
-            Platform.runLater(() -> {
-                NotificationManager.show("Modo Game ativado", NotificationManager.Type.SUCCESS);
-                updateScore();
-            });
-        }));
-
-        ActionButton fpsBoost = new ActionButton("FPS Boost", "default");
-        fpsBoost.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(fpsBoost, Priority.ALWAYS);
-        fpsBoost.setOnAction(e -> runButtonAction(fpsBoost, () -> {
-            boolean success = app.getFpsBoostService().applyAll();
-            Platform.runLater(() -> {
-                NotificationManager.show(success ? "FPS Boost aplicado" : "FPS Boost aplicado parcialmente",
-                        success ? NotificationManager.Type.SUCCESS : NotificationManager.Type.WARNING);
-                updateScore();
-            });
-        }));
-        primaryRow.getChildren().addAll(gameMode, fpsBoost);
-
-        HBox secondaryRow = new HBox(10);
-        ActionButton ram = new ActionButton("Limpar RAM", "default");
-        ActionButton dns = new ActionButton("Flush DNS", "default");
-        ActionButton temp = new ActionButton("Limpar Temp", "default");
-        for (ActionButton b : new ActionButton[]{ram, dns, temp}) {
-            b.setMaxWidth(Double.MAX_VALUE);
-            HBox.setHgrow(b, Priority.ALWAYS);
-        }
-        ram.setOnAction(e -> runButtonAction(ram, () -> {
-            boolean ok = app.getRamService().clearStandbyMemory();
-            Platform.runLater(() -> NotificationManager.show(ok ? "RAM otimizada" : "RAM parcialmente otimizada",
-                    ok ? NotificationManager.Type.SUCCESS : NotificationManager.Type.WARNING));
-        }));
-        dns.setOnAction(e -> runButtonAction(dns, () -> {
-            app.getNetworkService().flushDns();
-            Platform.runLater(() -> NotificationManager.show("DNS limpo", NotificationManager.Type.SUCCESS));
-        }));
-        temp.setOnAction(e -> runButtonAction(temp, () -> {
-            long freed = app.getPerformanceService().clearTempFiles();
-            Platform.runLater(() -> NotificationManager.show(formatBytes(freed) + " liberados", NotificationManager.Type.SUCCESS));
-        }));
-        secondaryRow.getChildren().addAll(ram, dns, temp);
-
-        ActionButton balanced = new ActionButton("Otimização recomendada", "success");
-        balanced.setMaxWidth(Double.MAX_VALUE);
-        balanced.setOnAction(e -> runButtonAction(balanced, () -> {
-            app.getPerformanceService().activateGameMode().join();
-            boolean fpsOk = app.getFpsBoostService().applyAll();
-            app.getRamService().clearStandbyMemory();
-            app.getNetworkService().flushDns();
-            Platform.runLater(() -> {
-                NotificationManager.show(fpsOk ? "Otimização recomendada aplicada" : "Otimização aplicada parcialmente",
-                        fpsOk ? NotificationManager.Type.SUCCESS : NotificationManager.Type.WARNING);
-                updateScore();
-            });
-        }));
-
-        panel.getChildren().addAll(title, primaryRow, secondaryRow, balanced);
-        return panel;
-    }
-
-    private void runButtonAction(ActionButton button, Runnable action) {
-        button.setLoading(true);
-        new Thread(() -> {
-            try {
-                action.run();
-            } catch (Exception ex) {
-                Platform.runLater(() -> NotificationManager.show("Falha na ação: " + ex.getMessage(), NotificationManager.Type.ERROR));
-            } finally {
-                Platform.runLater(() -> button.setLoading(false));
-            }
-        }, "Dashboard-Action").start();
-    }
-
-    private HBox buildGaugeRow() {
-        HBox row = new HBox(14);
-        row.setAlignment(Pos.CENTER);
-
-        cpuGauge = new Gauge("CPU", "%", 100);
-        gpuGauge = new Gauge("GPU", "%", 100);
-        ramGauge = new Gauge("RAM", "%", 100);
-
-        VBox cpuBox = wrapGauge(cpuGauge, "Processador");
-        VBox gpuBox = wrapGauge(gpuGauge, "Placa de video");
-        VBox ramBox = wrapGauge(ramGauge, "Memoria");
-
-        HBox.setHgrow(cpuBox, Priority.ALWAYS);
-        HBox.setHgrow(gpuBox, Priority.ALWAYS);
-        HBox.setHgrow(ramBox, Priority.ALWAYS);
-        row.getChildren().addAll(cpuBox, gpuBox, ramBox);
-        return row;
-    }
-
-    private VBox wrapGauge(Gauge gauge, String description) {
-        VBox box = new VBox(8);
-        box.getStyleClass().addAll("card", "compact-gauge-card");
-        box.setAlignment(Pos.CENTER);
-        box.setPadding(new Insets(18));
-
-        Label desc = new Label(description);
-        desc.getStyleClass().addAll("font-sm", "text-secondary");
-        box.getChildren().addAll(gauge, desc);
-        return box;
-    }
-
-    private HBox buildMetricsRow() {
-        HBox row = new HBox(12);
-        pingCard = new MetricCard("NET", "PING", "--", "ms");
-        cpuTempCard = new MetricCard("CPU", "TEMP CPU", "--", "C");
-        gpuTempCard = new MetricCard("GPU", "TEMP GPU", "--", "C");
-        diskCard = new MetricCard("SSD", "DISCO", "--", "uso");
-
-        HBox.setHgrow(pingCard, Priority.ALWAYS);
-        HBox.setHgrow(cpuTempCard, Priority.ALWAYS);
-        HBox.setHgrow(gpuTempCard, Priority.ALWAYS);
-        HBox.setHgrow(diskCard, Priority.ALWAYS);
-        row.getChildren().addAll(pingCard, cpuTempCard, gpuTempCard, diskCard);
-        return row;
-    }
-
-    private HBox buildShortcutRow() {
-        HBox row = new HBox(12);
+    private HBox fact(String icon, String label, Label value) {
+        Label l = new Label(label);
+        l.getStyleClass().add("fact-label");
+        value.getStyleClass().add("fact-value");
+        VBox text = new VBox(1, l, value);
+        HBox row = new HBox(10, Ui.icon(icon, 18), text);
         row.setAlignment(Pos.CENTER_LEFT);
-
-        VBox gpu = shortcutCard("Perfil NVIDIA", "Abrir GPU", () -> app.getNavigationManager().navigateTo("gpu"));
-        VBox monitor = shortcutCard("Processos e uso", "Abrir Monitor", () -> app.getNavigationManager().navigateTo("monitor"));
-        VBox network = shortcutCard("Rede e ping", "Abrir Rede", () -> app.getNavigationManager().navigateTo("network"));
-        HBox.setHgrow(gpu, Priority.ALWAYS);
-        HBox.setHgrow(monitor, Priority.ALWAYS);
-        HBox.setHgrow(network, Priority.ALWAYS);
-        row.getChildren().addAll(gpu, monitor, network);
+        row.getStyleClass().add("fact-row");
         return row;
     }
 
-    private VBox shortcutCard(String title, String action, Runnable onClick) {
-        VBox card = new VBox(6);
-        card.getStyleClass().add("dashboard-shortcut");
-        Label t = new Label(title);
-        t.getStyleClass().addAll("font-md", "font-bold", "text-primary");
-        Label a = new Label(action);
-        a.getStyleClass().addAll("font-sm", "text-accent", "font-bold");
-        card.getChildren().addAll(t, a);
-        card.setOnMouseClicked(e -> onClick.run());
+    private void refreshScore() {
+        TweakService service = app.getTweakService();
+        Ui.async(() -> {
+            List<Tweak> target = service.tweaksFor(Tweak.Profile.GAMER);
+            int applicable = 0, applied = 0;
+            for (Tweak t : target) {
+                TweakService.Status s = service.status(t);
+                if (s == TweakService.Status.UNAVAILABLE) continue;
+                applicable++;
+                if (s == TweakService.Status.APPLIED) applied++;
+            }
+            return new int[]{applied, applicable, service.appliedByNextGenCount()};
+        }, r -> {
+            if (r == null) return;
+            double ratio = r[1] == 0 ? 0 : r[0] / (double) r[1];
+            scoreRing.setProgress(ratio);
+            scoreRing.setCenterText(Math.round(ratio * 100) + "%");
+            if (ratio >= 0.9) {
+                scoreTitle.setText("Seu PC está pronto para jogar.");
+                scoreDetail.setText(r[0] + " de " + r[1] + " ajustes do perfil Gamer ativos. Para latência mínima no CS2, aplique o perfil Competitivo.");
+            } else {
+                scoreTitle.setText((r[1] - r[0]) + " otimizações disponíveis para o seu PC");
+                scoreDetail.setText(r[0] + " de " + r[1] + " ajustes do perfil Gamer ativos. A Otimização Full aplica tudo com ponto de restauração e reversão em 1 clique.");
+            }
+            tweaksValue.setText(r[2] + " aplicados · reversíveis");
+        });
+        boosterValue.setText(app.getGameBoosterService().isGameActive() ? "Ativo em " + app.getGameBoosterService().activeGame()
+                : app.getGameBoosterService().isRunning() ? "Aguardando jogo" : "Desligado");
+        Ui.async(() -> app.getSteamLocator().cs2Root() != null, found ->
+                cs2Value.setText(Boolean.TRUE.equals(found) ? "Instalado" : "Não encontrado"));
+    }
+
+    // ── Gauges ──────────────────────────────────────────────────────
+
+    private Node buildGauges() {
+        cpuGauge = new Gauge("", "%", 100, 118);
+        gpuGauge = new Gauge("", "%", 100, 118);
+        ramGauge = new Gauge("", "%", 100, 118);
+        cpuSub = new Label("--");
+        gpuSub = new Label("--");
+        ramSub = new Label("--");
+
+        pingValue = new Label("--");
+        cpuTemp = new Label("--");
+        gpuTemp = new Label("--");
+        diskValue = new Label("--");
+        VBox vitals = Ui.card("vitals-card");
+        vitals.getChildren().addAll(Ui.cardHeader("mdi2h-heart-pulse", "Sinais vitais", null),
+                vital("Ping", pingValue), vital("Temp. CPU", cpuTemp), vital("Temp. GPU", gpuTemp), vital("Disco em uso", diskValue));
+
+        return new ResponsiveGrid(230, 4,
+                gaugeCard("mdi2c-chip", "Processador", cpuGauge, cpuSub),
+                gaugeCard("mdi2e-expansion-card-variant", "Placa de vídeo", gpuGauge, gpuSub),
+                gaugeCard("mdi2m-memory", "Memória", ramGauge, ramSub),
+                vitals);
+    }
+
+    private VBox gaugeCard(String icon, String title, Gauge gauge, Label sub) {
+        sub.getStyleClass().add("gauge-sub");
+        sub.setWrapText(true);
+        VBox card = Ui.card("gauge-card");
+        card.setAlignment(Pos.TOP_CENTER);
+        HBox header = Ui.cardHeader(icon, title, null);
+        card.getChildren().addAll(header, gauge, sub);
         return card;
     }
 
-    private void updateScore() {
-        if (app.getFpsBoostService() == null) return;
-
-        java.util.concurrent.CompletableFuture.supplyAsync(() -> app.getFpsBoostService().getOptimizationCount())
-            .whenComplete((counts, error) -> Platform.runLater(() -> {
-            if (error != null) {
-                scoreLabel.setText("--");
-                scoreDescription.setText("Consulta indisponível");
-                return;
-            }
-            int applied = counts[0];
-            int total = counts[1];
-            scoreLabel.setText(applied + "/" + total);
-            scoreDescription.setText("Ajustes ativos");
-        }));
+    private HBox vital(String label, Label value) {
+        Label l = new Label(label);
+        l.getStyleClass().add("vital-label");
+        value.getStyleClass().add("vital-value");
+        HBox row = new HBox(l, Ui.spacer(), value);
+        row.getStyleClass().add("vital-row");
+        return row;
     }
 
-    private void bindMonitoring() {
-        if (app.getSystemInfoService() == null) return;
-
-        app.getSystemInfoService().snapshotProperty().addListener((obs, oldVal, snap) -> {
-            if (snap == null) return;
-            Platform.runLater(() -> updateSnapshot(snap));
-        });
+    private void update(SystemSnapshot s) {
+        cpuGauge.setValue(s.getCpuUsage());
+        gpuGauge.setValue(s.getGpuUsage());
+        ramGauge.setValue(s.getRamUsagePercent());
+        cpuSub.setText(s.getCpuFrequency() > 0 ? String.format(Locale.US, "%.2f GHz · %d threads", s.getCpuFrequency() / 1000.0, s.getCpuThreads()) : "--");
+        gpuSub.setText(s.getGpuVramTotal() > 0 ? String.format(Locale.US, "VRAM %.1f / %.1f GB", s.getGpuVramUsed() / 1024.0, s.getGpuVramTotal() / 1024.0) : shortName(s.getGpuName()));
+        ramSub.setText(String.format(Locale.US, "%.1f / %.1f GB", s.getRamUsed() / 1073741824.0, s.getRamTotal() / 1073741824.0));
+        pingValue.setText(s.getNetworkPing() > 0 ? String.format(Locale.US, "%.0f ms", s.getNetworkPing()) : "--");
+        cpuTemp.setText(s.getCpuTemperature() > 0 ? String.format(Locale.US, "%.0f °C", s.getCpuTemperature()) : "sem sensor");
+        gpuTemp.setText(s.getGpuTemperature() > 0 ? String.format(Locale.US, "%.0f °C", s.getGpuTemperature()) : "--");
+        diskValue.setText(s.getDiskUsagePercent() > 0 ? String.format(Locale.US, "%.0f%%", s.getDiskUsagePercent()) : "--");
+        if (s.getCpuModel() != null && !s.getCpuModel().isBlank()) specCpu.setText(s.getCpuModel().trim());
+        if (s.getGpuName() != null && !s.getGpuName().isBlank()) specGpu.setText(s.getGpuName().trim());
+        if (s.getRamTotal() > 0) specRam.setText(String.format(Locale.US, "%.0f GB", s.getRamTotal() / 1073741824.0));
     }
 
-    private void updateSnapshot(SystemSnapshot snap) {
-        cpuGauge.setValue(snap.getCpuUsage());
-        gpuGauge.setValue(snap.getGpuUsage());
-        ramGauge.setValue(snap.getRamUsagePercent());
+    // ── Quick actions ───────────────────────────────────────────────
 
-        cpuMini.setText(String.format(Locale.US, "CPU  %.0f%%", snap.getCpuUsage()));
-        gpuMini.setText(String.format(Locale.US, "GPU  %.0f%%", snap.getGpuUsage()));
-        ramMini.setText(String.format(Locale.US, "RAM  %.0f%%", snap.getRamUsagePercent()));
-
-        pingCard.setValue(snap.getNetworkPing() > 0 ? String.format(Locale.US, "%.0f", snap.getNetworkPing()) : "--");
-        cpuTempCard.setValue(snap.getCpuTemperature() > 0 ? String.format(Locale.US, "%.0f", snap.getCpuTemperature()) : "--");
-        gpuTempCard.setValue(snap.getGpuTemperature() > 0 ? String.format(Locale.US, "%.0f", snap.getGpuTemperature()) : "--");
-        diskCard.setValue(snap.getDiskUsagePercent() > 0 ? String.format(Locale.US, "%.0f%%", snap.getDiskUsagePercent()) : "--");
-
-        updateHealthText(snap);
+    private Node buildQuickActions() {
+        return new ResponsiveGrid(240, 4,
+                quickAction("mdi2m-memory", "Liberar RAM", "Esvazia o cache Standby e a lista modificada.", "Liberar", btn ->
+                        Ui.run(btn, () -> app.getMemoryService().clean(MemoryService.CleanMode.DEEP), r -> {
+                            if (r == null) return;
+                            NotificationManager.show(r.success() ? "RAM: " + Ui.formatBytes(r.freedBytes()) + " movidos para memória livre." : r.message(),
+                                    r.success() ? NotificationManager.Type.SUCCESS : NotificationManager.Type.WARNING);
+                        })),
+                quickAction("mdi2b-broom", "Limpeza rápida", "Temporários, relatórios de erro e caches seguros.", "Limpar", btn ->
+                        Ui.run(btn, () -> {
+                            long total = 0;
+                            for (CleanupService.Target t : app.getCleanupService().targets()) {
+                                if (t.recommended()) total += app.getCleanupService().clean(t);
+                            }
+                            return total;
+                        }, freed -> {
+                            if (freed != null) NotificationManager.success("Limpeza concluída: " + Ui.formatBytes(freed) + " liberados.");
+                        })),
+                quickAction("mdi2d-dns-outline", "Renovar DNS", "Limpa o cache DNS para corrigir sites e servidores lentos.", "Executar", btn ->
+                        Ui.run(btn, () -> app.getNetworkService().flushDns(), out -> NotificationManager.success("Cache DNS limpo."))),
+                quickAction("mdi2r-rocket-launch-outline", "Game Booster", "Otimiza automaticamente ao abrir o CS2.", "Configurar", btn ->
+                        app.getNavigationManager().navigateTo("cs2")));
     }
 
-    private void updateHealthText(SystemSnapshot snap) {
-        if (snap.getCpuUsage() >= 90 || snap.getRamUsagePercent() >= 92 || snap.getGpuTemperature() >= 84) {
-            healthTitle.setText("Atenção necessária");
-            healthTitle.getStyleClass().removeAll("text-success", "text-warning", "text-primary");
-            healthTitle.getStyleClass().add("text-warning");
-            healthDetail.setText("Uso alto detectado. Abra o Monitor para ver processos pesados antes de otimizar.");
-        } else if (snap.getGpuUsage() >= 75 || snap.getCpuUsage() >= 70) {
-            healthTitle.setText("Carga de jogo detectada");
-            healthTitle.getStyleClass().removeAll("text-success", "text-warning", "text-primary");
-            healthTitle.getStyleClass().add("text-accent");
-            healthDetail.setText("Sistema em carga. Evite limpar caches enquanto o jogo estiver aberto.");
-        } else {
-            healthTitle.setText("Sistema estável");
-            healthTitle.getStyleClass().removeAll("text-success", "text-warning", "text-primary");
-            healthTitle.getStyleClass().add("text-success");
-            healthDetail.setText("Tudo dentro do esperado. Use a otimização recomendada antes de jogar.");
-        }
+    private VBox quickAction(String icon, String title, String desc, String action, java.util.function.Consumer<ActionButton> onClick) {
+        ActionButton btn = new ActionButton(action, "default");
+        btn.setMaxWidth(Double.MAX_VALUE);
+        btn.setOnAction(e -> onClick.accept(btn));
+        Region push = new Region();
+        VBox.setVgrow(push, Priority.ALWAYS);
+        VBox card = Ui.card("quick-card");
+        card.getChildren().addAll(Ui.cardHeader(icon, title, null), Ui.muted(desc), push, btn);
+        return card;
     }
 
-    private String formatBytes(long bytes) {
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return String.format(Locale.US, "%.1f KB", bytes / 1024.0);
-        if (bytes < 1024 * 1024 * 1024) return String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024));
-        return String.format(Locale.US, "%.2f GB", bytes / (1024.0 * 1024 * 1024));
+    // ── System summary ─────────────────────────────────────────────
+
+    private Node buildSystemCard() {
+        VBox card = Ui.card();
+        card.getChildren().add(Ui.cardHeader("mdi2d-desktop-tower-monitor", "Seu sistema", null));
+        ResponsiveGrid grid = new ResponsiveGrid(220, 4,
+                spec("Processador", specCpu),
+                spec("Placa de vídeo", specGpu),
+                spec("Memória", specRam),
+                spec("Windows", new Label(System.getProperty("os.name") + " (" + System.getProperty("os.version") + ")")));
+        grid.gaps(12, 12);
+        card.getChildren().add(grid);
+        return card;
+    }
+
+    private VBox spec(String label, Label v) {
+        Label l = new Label(label);
+        l.getStyleClass().add("fact-label");
+        v.getStyleClass().add("spec-value");
+        v.setWrapText(true);
+        VBox box = new VBox(3, l, v);
+        box.getStyleClass().add("spec-tile");
+        return box;
+    }
+
+    private static String shortName(String gpu) {
+        return gpu == null || gpu.isBlank() ? "--" : gpu.replace("NVIDIA GeForce ", "").replace("AMD Radeon ", "Radeon ");
     }
 }

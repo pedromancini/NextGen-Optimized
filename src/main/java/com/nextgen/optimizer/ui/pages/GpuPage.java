@@ -35,11 +35,11 @@ public class GpuPage extends VBox {
 
     private void buildUI() {
         VBox header = new VBox(4);
-        Label title = new Label("💻 Placa de Vídeo (GPU)");
+        Label title = new Label("Placa de Vídeo (GPU)");
         title.getStyleClass().add("page-title");
         Label sub = new Label("Estatísticas em tempo real, temperaturas e configurações da sua placa de vídeo");
         sub.getStyleClass().add("page-subtitle");
-        header.getChildren().addAll(title, sub);
+        header.getChildren().setAll(com.nextgen.optimizer.ui.components.Ui.pageHeader("mdi2e-expansion-card-variant", "Placa de Vídeo (GPU)", sub.getText()));
 
         // Info Card
         HBox infoCard = new HBox(20);
@@ -47,7 +47,7 @@ public class GpuPage extends VBox {
         infoCard.setAlignment(Pos.CENTER_LEFT);
         infoCard.setPadding(new Insets(24));
 
-        Label logo = new Label("🎮");
+        Label logo = Ui.glyph("🎮");
         logo.setStyle("-fx-font-size: 48px;");
 
         VBox details = new VBox(6);

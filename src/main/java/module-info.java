@@ -14,11 +14,13 @@ module com.nextgen.optimizer {
 
     requires java.desktop;
     requires java.management;
+    requires jdk.unsupported;
 
     opens com.nextgen.optimizer to javafx.fxml, javafx.graphics;
     opens com.nextgen.optimizer.ui.pages to javafx.fxml;
     opens com.nextgen.optimizer.ui.components to javafx.fxml;
     opens com.nextgen.optimizer.model to com.google.gson;
+    opens com.nextgen.optimizer.tweaks to com.google.gson;
 
     exports com.nextgen.optimizer;
     exports com.nextgen.optimizer.core;
@@ -27,4 +29,6 @@ module com.nextgen.optimizer {
     exports com.nextgen.optimizer.ui.pages;
     exports com.nextgen.optimizer.model;
     exports com.nextgen.optimizer.overlay;
+    exports com.nextgen.optimizer.tweaks;
+    exports com.nextgen.optimizer.nativeapi;
 }

@@ -164,6 +164,7 @@ public class SystemInfoService {
     // ═══════════════════════════════════════════════════════════════════
 
     private long pollCounter = 0;
+    private int cpuTempMisses = 0;
 
     private void poll() {
         try {
@@ -217,10 +218,18 @@ public class SystemInfoService {
         prevTicks = cpu.getSystemCpuLoadTicks();
         prevCoreTicks = cpu.getProcessorCpuLoadTicks();
 
-        // Temperature (OSHI sensor or smart dynamic thermal estimate if Windows blocks raw ACPI)
-        double temp = sensors.getCpuTemperature();
-        if (temp <= 0 || Double.isNaN(temp) || temp > 115.0) {
-            temp = 39.5 + (cpuLoad * 0.34) + ((System.currentTimeMillis() / 3000L) % 3) * 0.4;
+        // Temperature: only real sensor readings. 0 means "not available" and the UI shows "--".
+        // Most desktops expose no ACPI sensor to Windows; stop polling after repeated misses
+        // so the monitor itself does not burn CPU on a failing WMI query every second.
+        double temp = 0;
+        if (cpuTempMisses < 5) {
+            temp = sensors.getCpuTemperature();
+            if (temp <= 0 || Double.isNaN(temp) || temp > 115.0) {
+                temp = 0;
+                cpuTempMisses++;
+            } else {
+                cpuTempMisses = 0;
+            }
         }
         snap.setCpuTemperature(temp);
 

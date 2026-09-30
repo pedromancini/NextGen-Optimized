@@ -1,5 +1,6 @@
 package com.nextgen.optimizer.overlay;
 
+import com.nextgen.optimizer.ui.components.Ui;
 import com.nextgen.optimizer.model.SystemSnapshot;
 import com.nextgen.optimizer.services.SystemInfoService;
 
@@ -67,11 +68,11 @@ public class OverlayWindow {
 
         HBox top = new HBox(6);
         top.setAlignment(Pos.CENTER_LEFT);
-        Label title = new Label("⚡ NEXTGEN OSD");
+        Label title = new Label("NEXTGEN X · OSD");
         title.setStyle("-fx-font-weight: 800; -fx-font-size: 11px; -fx-text-fill: #3b82f6;");
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        Label close = new Label("✕");
+        Label close = Ui.glyph("✕");
         close.setStyle("-fx-font-size: 11px; -fx-text-fill: #8b95a8; -fx-cursor: hand;");
         close.setOnMouseClicked(e -> stage.hide());
         top.getChildren().addAll(title, spacer, close);

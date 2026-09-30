@@ -3,7 +3,7 @@ package com.nextgen.optimizer.ui.pages;
 import com.nextgen.optimizer.App;
 import com.nextgen.optimizer.core.NotificationManager;
 import com.nextgen.optimizer.model.SystemSnapshot;
-import com.nextgen.optimizer.services.PerformanceService;
+import com.nextgen.optimizer.services.ProcessService;
 import com.nextgen.optimizer.ui.components.*;
 
 import javafx.animation.PauseTransition;
@@ -43,7 +43,7 @@ public class MonitorPage extends VBox {
     private ActionButton refreshProcessesButton;
     private final PauseTransition searchDebounce = new PauseTransition(Duration.millis(350));
     private volatile boolean processRefreshRunning = false;
-    private List<PerformanceService.ProcessInfo> latestProcesses = new ArrayList<>();
+    private List<ProcessService.ProcessInfo> latestProcesses = new ArrayList<>();
 
     public MonitorPage(App app) {
         this.app = app;
@@ -61,7 +61,7 @@ public class MonitorPage extends VBox {
         title.getStyleClass().add("page-title");
         Label sub = new Label("Uso de CPU, GPU, RAM, rede, disco e processos que mais estão puxando o sistema");
         sub.getStyleClass().add("page-subtitle");
-        header.getChildren().addAll(title, sub);
+        header.getChildren().setAll(com.nextgen.optimizer.ui.components.Ui.pageHeader("mdi2c-chart-timeline-variant", "Monitor em Tempo Real", sub.getText()));
 
         HBox gaugesRow = new HBox(16);
         gaugesRow.setAlignment(Pos.CENTER);
@@ -235,14 +235,14 @@ public class MonitorPage extends VBox {
     }
 
     private void refreshProcesses() {
-        if (processRefreshRunning || app.getPerformanceService() == null) return;
+        if (processRefreshRunning || app.getProcessService() == null) return;
         processRefreshRunning = true;
         refreshProcessesButton.setLoading(true);
         String filter = processSearch == null ? "" : processSearch.getText();
 
         new Thread(() -> {
-            List<PerformanceService.ProcessInfo> processes =
-                    app.getPerformanceService().getDeepRunningProcesses(filter, PROCESS_LIMIT);
+            List<ProcessService.ProcessInfo> processes =
+                    app.getProcessService().getDeepRunningProcesses(filter, PROCESS_LIMIT);
             Platform.runLater(() -> {
                 latestProcesses = processes;
                 renderProcessRows(processes);
@@ -252,7 +252,7 @@ public class MonitorPage extends VBox {
         }, "MonitorPage-ProcessRefresh").start();
     }
 
-    private void renderProcessRows(List<PerformanceService.ProcessInfo> processes) {
+    private void renderProcessRows(List<ProcessService.ProcessInfo> processes) {
         processList.getChildren().clear();
 
         if (processes.isEmpty()) {
@@ -267,7 +267,7 @@ public class MonitorPage extends VBox {
                 .filter(p -> !"OK".equalsIgnoreCase(p.getStatus()) && !"Sistema".equalsIgnoreCase(p.getStatus()))
                 .count();
 
-        for (PerformanceService.ProcessInfo process : processes) {
+        for (ProcessService.ProcessInfo process : processes) {
             processList.getChildren().add(createProcessRow(process));
         }
 
@@ -275,7 +275,7 @@ public class MonitorPage extends VBox {
                 (attentionCount > 0 ? " | " + attentionCount + " precisam de atencao" : ""));
     }
 
-    private HBox createProcessRow(PerformanceService.ProcessInfo process) {
+    private HBox createProcessRow(ProcessService.ProcessInfo process) {
         HBox row = new HBox(10);
         row.getStyleClass().add("deep-process-row");
         row.setAlignment(Pos.CENTER_LEFT);
@@ -305,7 +305,7 @@ public class MonitorPage extends VBox {
         ActionButton locationBtn = new ActionButton("Pasta", "default");
         locationBtn.setDisable(process.getPath().isBlank());
         locationBtn.setOnAction(e -> {
-            boolean opened = app.getPerformanceService().openProcessLocation(process.getPath());
+            boolean opened = app.getProcessService().openProcessLocation(process.getPath());
             NotificationManager.show(opened ? "Local do processo aberto" : "Nao foi possivel abrir o local",
                     opened ? NotificationManager.Type.INFO : NotificationManager.Type.WARNING);
         });
@@ -336,7 +336,7 @@ public class MonitorPage extends VBox {
         return "text-warning";
     }
 
-    private void showProcessDetails(PerformanceService.ProcessInfo process) {
+    private void showProcessDetails(ProcessService.ProcessInfo process) {
         String path = process.getPath().isBlank() ? "nao disponivel ou protegido pelo sistema" : process.getPath();
         String command = process.getCommandLine().isBlank() ? "--" : process.getCommandLine();
         selectedPathLabel.setText("Caminho: " + path);
@@ -347,10 +347,10 @@ public class MonitorPage extends VBox {
         Clipboard.getSystemClipboard().setContent(content);
     }
 
-    private void terminateProcess(PerformanceService.ProcessInfo process, ActionButton button) {
+    private void terminateProcess(ProcessService.ProcessInfo process, ActionButton button) {
         button.setLoading(true);
         new Thread(() -> {
-            boolean success = app.getPerformanceService().terminateProcess(process.getPid());
+            boolean success = app.getProcessService().terminateProcess(process.getPid());
             Platform.runLater(() -> {
                 button.setLoading(false);
                 NotificationManager.show(success ? process.getName() + " encerrado" : "Falha ao encerrar " + process.getName(),

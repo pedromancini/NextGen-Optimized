@@ -1,17 +1,27 @@
 package com.nextgen.optimizer.services;
 
+import com.sun.nio.file.ExtendedOpenOption;
+
 import java.io.File;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 
 /**
- * Service for Disk health, TRIM, Defrag, and disk benchmarks.
+ * Drives, disk health, TRIM/defrag and an honest sequential speed test.
+ * Every value shown comes from Windows; nothing is estimated or invented.
  */
 public class StorageService {
 
-    private static final long SAFE_DELETE_AGE_MS = 15L * 60L * 1000L;
+    /** Physical disk details for one drive letter. */
+    public record DiskInfo(String mediaType, String health, String busType, String model) {
+        public boolean isSsd() {
+            return "SSD".equalsIgnoreCase(mediaType) || "NVMe".equalsIgnoreCase(busType);
+        }
+    }
 
     private final PowerShellService powerShellService;
     private final SystemInfoService systemInfoService;
@@ -21,167 +31,121 @@ public class StorageService {
         this.systemInfoService = systemInfoService;
     }
 
+    /** One query for all volumes: letter → physical disk behind it. */
+    public Map<String, DiskInfo> diskInfoByLetter() {
+        Map<String, DiskInfo> map = new HashMap<>();
+        String out = powerShellService.executeResult(
+                "Get-Partition | Where-Object DriveLetter | ForEach-Object { $p = $_; "
+                        + "$d = Get-PhysicalDisk | Where-Object DeviceId -eq ([string]$p.DiskNumber) | Select-Object -First 1; "
+                        + "'{0}|{1}|{2}|{3}|{4}' -f $p.DriveLetter, $d.MediaType, $d.HealthStatus, $d.BusType, $d.FriendlyName }",
+                60).output();
+        for (String line : out.split("\\R")) {
+            String[] parts = line.split("\\|", -1);
+            if (parts.length >= 5 && parts[0].trim().length() == 1) {
+                map.put(parts[0].trim().toUpperCase(Locale.ROOT),
+                        new DiskInfo(parts[1].trim(), parts[2].trim(), parts[3].trim(), parts[4].trim()));
+            }
+        }
+        return map;
+    }
+
     public List<Map<String, Object>> getDrives() {
+        Map<String, DiskInfo> info = diskInfoByLetter();
         List<Map<String, Object>> drives = new ArrayList<>();
         File[] roots = File.listRoots();
-        if (roots != null) {
-            for (File r : roots) {
-                Map<String, Object> map = new HashMap<>();
-                map.put("letter", r.getAbsolutePath());
-                map.put("total", r.getTotalSpace());
-                map.put("free", r.getFreeSpace());
-                map.put("used", r.getTotalSpace() - r.getFreeSpace());
-                map.put("type", isDriveSsd(r.getAbsolutePath()) ? "SSD" : "HDD");
-                drives.add(map);
-            }
+        if (roots == null) return drives;
+        for (File r : roots) {
+            if (r.getTotalSpace() <= 0) continue;
+            String letter = r.getAbsolutePath().substring(0, 1).toUpperCase(Locale.ROOT);
+            DiskInfo d = info.getOrDefault(letter, new DiskInfo("", "", "", ""));
+            Map<String, Object> map = new HashMap<>();
+            map.put("letter", r.getAbsolutePath());
+            map.put("total", r.getTotalSpace());
+            map.put("free", r.getFreeSpace());
+            map.put("used", r.getTotalSpace() - r.getFreeSpace());
+            map.put("type", d.isSsd() ? "SSD" : d.mediaType().isBlank() ? "Disco" : "HD");
+            map.put("info", d);
+            drives.add(map);
         }
         return drives;
     }
 
-    public String getDriveHealth(String driveLetter) {
-        try {
-            String letter = driveLetter.substring(0, 1);
-            String output = powerShellService.executeSync("Get-PhysicalDisk | Where-Object DeviceID -eq 0 | Select-Object -ExpandProperty HealthStatus");
-            if (output.trim().isEmpty()) return "Good";
-            return output.trim();
-        } catch (Exception e) {
-            return "Good";
-        }
-    }
-
     public boolean runTrim(String driveLetter) {
-        try {
-            String letter = driveLetter.substring(0, 1);
-            powerShellService.executeSync("Optimize-Volume -DriveLetter " + letter + " -ReTrim");
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
+        return powerShellService.executeResult("Optimize-Volume -DriveLetter " + letter(driveLetter) + " -ReTrim -ErrorAction Stop", 600).isSuccess();
     }
 
     public boolean runDefrag(String driveLetter) {
-        try {
-            String letter = driveLetter.substring(0, 1);
-            powerShellService.executeSync("Optimize-Volume -DriveLetter " + letter + " -Defrag");
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    public long cleanDrive(String driveLetter) {
-        long cleaned = 0;
-        try {
-            File temp = new File(System.getProperty("java.io.tmpdir"));
-            File[] files = temp.listFiles();
-            if (files != null) {
-                for (File f : files) {
-                    cleaned += deleteTempItem(f);
-                }
-            }
-        } catch (Exception ignored) {}
-        return cleaned;
-    }
-
-    private long deleteTempItem(File file) {
-        if (file == null || !file.exists()) return 0;
-        if (System.currentTimeMillis() - file.lastModified() < SAFE_DELETE_AGE_MS) return 0;
-
-        long cleaned = 0;
-        try {
-            if (file.isDirectory()) {
-                File[] children = file.listFiles();
-                if (children != null) {
-                    for (File child : children) {
-                        cleaned += deleteTempItem(child);
-                    }
-                }
-            }
-            long size = file.isFile() ? file.length() : 0;
-            if (file.delete()) {
-                cleaned += size;
-            }
-        } catch (Exception ignored) {}
-        return cleaned;
-    }
-
-    public boolean isDriveSsd(String driveLetter) {
-        try {
-            String output = powerShellService.executeSync("Get-PhysicalDisk | Select-Object -ExpandProperty MediaType");
-            return output.toLowerCase().contains("ssd");
-        } catch (Exception e) {
-            return true;
-        }
-    }
-
-    public double[] runBenchmark(String driveLetter) {
-        double readSpeed = 0.0;
-        double writeSpeed = 0.0;
-        try {
-            // Find a guaranteed writable directory on this drive
-            File targetDir;
-            if (driveLetter != null && driveLetter.toUpperCase().startsWith("C")) {
-                targetDir = new File(System.getProperty("java.io.tmpdir"));
-            } else {
-                targetDir = new File(driveLetter != null ? driveLetter : "C:\\");
-            }
-            if (!targetDir.exists()) targetDir.mkdirs();
-
-            File testFile = new File(targetDir, "nextgen_bench_" + System.currentTimeMillis() + ".tmp");
-
-            // Write test (32 MB block)
-            long start = System.nanoTime();
-            try (RandomAccessFile raf = new RandomAccessFile(testFile, "rw");
-                 FileChannel channel = raf.getChannel()) {
-                ByteBuffer buf = ByteBuffer.allocateDirect(1024 * 1024);
-                for (int i = 0; i < 32; i++) {
-                    buf.clear();
-                    channel.write(buf);
-                }
-            }
-            double elapsedWrite = (System.nanoTime() - start) / 1e9;
-            writeSpeed = 32.0 / Math.max(elapsedWrite, 0.01);
-
-            // Read test
-            start = System.nanoTime();
-            try (RandomAccessFile raf = new RandomAccessFile(testFile, "r");
-                 FileChannel channel = raf.getChannel()) {
-                ByteBuffer buf = ByteBuffer.allocateDirect(1024 * 1024);
-                for (int i = 0; i < 32; i++) {
-                    buf.clear();
-                    channel.read(buf);
-                }
-            }
-            double elapsedRead = (System.nanoTime() - start) / 1e9;
-            readSpeed = 32.0 / Math.max(elapsedRead, 0.01);
-
-            testFile.delete();
-        } catch (Exception e) {
-            // Fallback estimation based on drive type if access denied
-            boolean ssd = isDriveSsd(driveLetter);
-            readSpeed = ssd ? 2450.0 : 160.0;
-            writeSpeed = ssd ? 2100.0 : 140.0;
-        }
-        return new double[]{Math.round(readSpeed), Math.round(writeSpeed)};
+        return powerShellService.executeResult("Optimize-Volume -DriveLetter " + letter(driveLetter) + " -Defrag -ErrorAction Stop", 3600).isSuccess();
     }
 
     public boolean runChkdsk(String driveLetter) {
+        // /scan is online and read-only: it never locks or repairs the volume.
+        return powerShellService.runProcess(1800, "chkdsk.exe", letter(driveLetter) + ":", "/scan").exitCode() == 0;
+    }
+
+    /**
+     * Sequential read/write with unbuffered (direct) I/O so the Windows cache
+     * does not inflate the result.
+     *
+     * @return {readMBps, writeMBps}, or {@code null} if the test could not run.
+     */
+    public double[] runBenchmark(String driveLetter) {
+        final int chunk = 8 * 1024 * 1024;
+        final int chunks = 32; // 256 MB
+        Path dir = letter(driveLetter).equalsIgnoreCase(System.getenv().getOrDefault("SystemDrive", "C:").substring(0, 1))
+                ? Path.of(System.getProperty("java.io.tmpdir"))
+                : Path.of(letter(driveLetter) + ":\\");
+        Path file = dir.resolve("nextgenx_bench_" + System.nanoTime() + ".tmp");
         try {
-            String letter = driveLetter.substring(0, 1);
-            powerShellService.executeSync("chkdsk " + letter + ": /scan");
-            return true;
+            int block = (int) Math.max(4096, Files.getFileStore(dir).getBlockSize());
+            ByteBuffer buffer = ByteBuffer.allocateDirect(chunk + block).alignedSlice(block).slice(0, chunk);
+            byte[] noise = new byte[chunk];
+            new Random(42).nextBytes(noise);
+            buffer.put(noise);
+
+            long start = System.nanoTime();
+            try (FileChannel ch = FileChannel.open(file, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
+                    ExtendedOpenOption.DIRECT)) {
+                for (int i = 0; i < chunks; i++) {
+                    buffer.clear();
+                    while (buffer.hasRemaining()) ch.write(buffer);
+                }
+                ch.force(true);
+            }
+            double write = chunks * (chunk / 1048576.0) / ((System.nanoTime() - start) / 1e9);
+
+            start = System.nanoTime();
+            try (FileChannel ch = FileChannel.open(file, StandardOpenOption.READ, ExtendedOpenOption.DIRECT)) {
+                for (int i = 0; i < chunks; i++) {
+                    buffer.clear();
+                    while (buffer.hasRemaining() && ch.read(buffer) > 0) { /* keep reading */ }
+                }
+            }
+            double read = chunks * (chunk / 1048576.0) / ((System.nanoTime() - start) / 1e9);
+            return new double[]{Math.round(read), Math.round(write)};
         } catch (Exception e) {
-            return false;
+            System.err.println("[StorageService] Benchmark failed: " + e.getMessage());
+            return null;
+        } finally {
+            try {
+                Files.deleteIfExists(file);
+            } catch (Exception ignored) {}
         }
     }
 
     public String getDetailedSmartInfo(String driveLetter) {
-        try {
-            String output = powerShellService.executeSync("Get-PhysicalDisk | Select-Object FriendlyName, MediaType, OperationalStatus, HealthStatus | Format-List");
-            if (output != null && !output.isBlank()) {
-                return output.trim();
-            }
-        } catch (Exception ignored) {}
-        return "Status S.M.A.R.T.: Íntegro / 100% Saudável";
+        String out = powerShellService.executeResult(
+                "$p = Get-Partition -DriveLetter " + letter(driveLetter) + " -ErrorAction Stop; "
+                        + "$d = Get-PhysicalDisk | Where-Object DeviceId -eq ([string]$p.DiskNumber) | Select-Object -First 1; "
+                        + "$r = $d | Get-StorageReliabilityCounter -ErrorAction SilentlyContinue; "
+                        + "'{0} · {1} · saúde: {2}' -f $d.FriendlyName, $d.MediaType, $d.HealthStatus; "
+                        + "if ($r) { 'Temperatura: {0} °C · Desgaste: {1}% · Horas ligado: {2} · Erros de leitura: {3}' -f "
+                        + "$r.Temperature, $r.Wear, $r.PowerOnHours, $r.ReadErrorsTotal }",
+                60).output().trim();
+        return out.isBlank() ? "O Windows não informou dados S.M.A.R.T. para esta unidade." : out.replace("\r\n", "\n");
+    }
+
+    private static String letter(String driveLetter) {
+        return driveLetter == null || driveLetter.isBlank() ? "C" : driveLetter.substring(0, 1).toUpperCase(Locale.ROOT);
     }
 }
